@@ -525,73 +525,85 @@ func (a *app) previewWorker() {
 	}
 }
 
-// rule is the marker of a horizontal line in the preview. The pane's width is known only when it is
-// drawn, so the line is made of it then: fourty dashes in a pane of thirty wrap onto a second line.
-const rule = "\x00"
+// pane is what the preview shows: a header made of words the program writes (markup and all) and the
+// body, which is a file's text and nothing else.
+//
+// The body is kept apart on purpose. It is escaped when it is drawn, so a text that holds "[red]" is
+// a text that holds "[red]" and not a colour instruction; and the line between the header and the
+// text is built from the width of the pane, which is known only when the pane is drawn.
+type pane struct {
+	head []string
+	body string
+}
 
-// renderPreview fills the pane and turns the rule markers into lines as wide as the pane.
-func (a *app) renderPreview(text string) {
+// renderPreview fills the pane: the header, a line as wide as the pane, then the text.
+func (a *app) renderPreview(p pane) {
 	width := 40
 	if _, _, w, _ := a.preview.GetInnerRect(); w > 0 {
 		width = w - 1
 	}
-	a.preview.SetText(strings.ReplaceAll(text, rule, strings.Repeat("─", width)))
+	lines := append([]string{}, p.head...)
+	if p.body != "" {
+		lines = append(lines, strings.Repeat("─", width), tview.Escape(p.body))
+	}
+	a.preview.SetText(strings.Join(lines, "\n"))
 	a.preview.ScrollToBeginning()
 }
 
 // previewBody is the preview: what the file is, what the installation thinks of it, and as much of
 // its text as fits the glance.
-func (a *app) previewBody(e Entry, doc *Doc, grouped bool) string {
-	var b strings.Builder
+func (a *app) previewBody(e Entry, doc *Doc, grouped bool) pane {
 	title := e.Name
 	if e.Name == ".." {
 		title = a.tr("above")
 	}
-	b.WriteString("[::b]" + tview.Escape(title) + "[-:-:-]\n")
+	head := []string{"[::b]" + tview.Escape(title) + "[-:-:-]"}
 	if e.Dir {
-		b.WriteString("[::d]" + a.tr("folder") + "[-:-:-]\n")
+		head = append(head, "[::d]"+a.tr("folder")+"[-:-:-]")
 		switch n := countChildren(e.Path); {
 		case n == -childCountLimit:
-			b.WriteString("[::d]" + a.tr("inFolder") + ": " + fmt.Sprintf(a.tr("itemsMany"), childCountLimit) + "[-:-:-]\n")
+			head = append(head, "[::d]"+a.tr("inFolder")+": "+fmt.Sprintf(a.tr("itemsMany"), childCountLimit)+"[-:-:-]")
 		case n >= 0:
-			b.WriteString("[::d]" + a.tr("inFolder") + ": " + fmt.Sprintf(a.tr("items"), n) + "[-:-:-]\n")
+			head = append(head, "[::d]"+a.tr("inFolder")+": "+fmt.Sprintf(a.tr("items"), n)+"[-:-:-]")
 		}
-		return b.String()
+		return pane{head: head}
 	}
 	if !e.Regular {
 		// A pipe, a socket, a device: opening one waits for a writer that may never come.
-		b.WriteString("[::d]" + a.tr("notRegular") + "[-:-:-]\n")
-		return b.String()
+		head = append(head, "[::d]"+a.tr("notRegular")+"[-:-:-]")
+		return pane{head: head}
 	}
-	b.WriteString(fmt.Sprintf("[::d]%s[-:-:-] · %s · %s %s\n",
+	head = append(head, fmt.Sprintf("[::d]%s[-:-:-] · %s · %s %s",
 		tview.Escape(kindOf(e.Path)), humanSize(e.Size), a.tr("metaModified"), e.ModTime.Format("02.01.06 15:04")))
 	if doc != nil {
-		b.WriteString(a.tr("metaState") + ": " + stateText(a.tr, doc) + "\n")
+		head = append(head, a.tr("metaState")+": "+stateText(a.tr, doc))
 		if doc.Description != "" {
-			b.WriteString("[::d]" + a.tr("description") + ":[-:-:-] " + tview.Escape(doc.Description) + "\n")
+			head = append(head, "[::d]"+a.tr("description")+":[-:-:-] "+tview.Escape(doc.Description))
 		}
 	} else if grouped {
-		b.WriteString("[::d]" + a.tr("outsideKnown") + "[-:-:-]\n")
+		head = append(head, "[::d]"+a.tr("outsideKnown")+"[-:-:-]")
 	}
-	b.WriteString(rule + "\n")
-	b.WriteString(a.previewText(e, doc))
-	return b.String()
+	body, hint := a.previewText(e, doc)
+	if hint != "" {
+		head = append(head, hint)
+	}
+	return pane{head: head, body: body}
 }
 
-// previewText picks the text for the pane: the file itself when it is text, the index when it is the
-// only place the text lives.
-func (a *app) previewText(e Entry, doc *Doc) string {
+// previewText picks the body for the pane: the file itself when it is text, and a line in the header
+// explaining where the text lives when it is not.
+func (a *app) previewText(e Entry, doc *Doc) (body, hint string) {
 	if isText(e.Path) && e.Regular {
 		text, err := localText(e.Path, 64<<10)
 		if err == nil {
-			return clipLines(text, 500)
+			return clipLines(text, 500), ""
 		}
-		return "[#c0504d]" + tview.Escape(err.Error()) + "[-]"
+		return "", "[#c0504d]" + tview.Escape(err.Error()) + "[-]"
 	}
 	if doc != nil && (doc.HasText || doc.HasDescription) {
-		return "[::d]" + a.tr("inIndex") + "[-:-:-]"
+		return "", "[::d]" + a.tr("inIndex") + "[-:-:-]"
 	}
-	return "[::d]" + a.tr("noPreview") + "[-:-:-]"
+	return "", "[::d]" + a.tr("noPreview") + "[-:-:-]"
 }
 
 // showIndexedText puts what the search holds for the file into the preview pane: the extracted text,
@@ -634,35 +646,34 @@ func (a *app) showIndexedText() {
 
 // indexedBody is the preview of the indexed text: the same frame the glance has, and the text itself
 // under it.
-func indexedBody(tr func(string) string, e Entry, doc *Doc, txt *DocText) string {
-	var b strings.Builder
-	b.WriteString("[::b]" + tview.Escape(e.Name) + "[-:-:-]\n")
-	b.WriteString("[::d]" + tr("indexText") + " · " + stateText(tr, doc) + "[-:-:-]\n")
+func indexedBody(tr func(string) string, e Entry, doc *Doc, txt *DocText) pane {
+	head := []string{
+		"[::b]" + tview.Escape(e.Name) + "[-:-:-]",
+		"[::d]" + tr("indexText") + " · " + stateText(tr, doc) + "[-:-:-]",
+	}
+	body := ""
 	if txt != nil {
 		if txt.Kind != "" {
-			b.WriteString("[::d]" + tview.Escape(txt.Kind) + "[-:-:-]\n")
+			head = append(head, "[::d]"+tview.Escape(txt.Kind)+"[-:-:-]")
 		}
 		if txt.Truncated {
-			b.WriteString("[#d7a02b]" + tr("truncated") + "[-]\n")
+			head = append(head, "[#d7a02b]"+tr("truncated")+"[-]")
+		}
+		if txt.Description != "" {
+			head = append(head, "[::b]"+tr("description")+"[-:-:-]", tview.Escape(txt.Description))
+		}
+		if txt.Audio != "" {
+			head = append(head, "[::b]"+tr("transcript")+"[-:-:-]")
+			body = clipLines(txt.Audio, 300)
+		}
+		if txt.Text != "" {
+			body = clipLines(txt.Text, 2000)
+		}
+		if txt.Text == "" && txt.Description == "" && txt.Audio == "" {
+			head = append(head, "[::d]"+tr("noPreview")+"[-:-:-]")
 		}
 	}
-	b.WriteString(rule + "\n")
-	if txt == nil {
-		return b.String()
-	}
-	if txt.Description != "" {
-		b.WriteString("[::b]" + tr("description") + "[-:-:-]\n" + tview.Escape(txt.Description) + "\n\n")
-	}
-	if txt.Audio != "" {
-		b.WriteString("[::b]" + tr("transcript") + "[-:-:-]\n" + tview.Escape(clipLines(txt.Audio, 300)) + "\n\n")
-	}
-	if txt.Text != "" {
-		b.WriteString(tview.Escape(clipLines(txt.Text, 2000)))
-	}
-	if txt.Text == "" && txt.Description == "" && txt.Audio == "" {
-		b.WriteString("[::d]" + tr("noPreview") + "[-:-:-]")
-	}
-	return b.String()
+	return pane{head: head, body: body}
 }
 
 // previewTimeout is how long a file may take to describe itself. A folder on a network that stopped
@@ -671,14 +682,14 @@ const previewTimeout = 3 * time.Second
 
 // renderWithTimeout builds the pane, but never waits longer than previewTimeout. A request that does
 // not answer is left behind: its goroutine ends when the read ends, and the pane says what happened.
-func (a *app) renderWithTimeout(job *previewJob) string {
-	done := make(chan string, 1)
+func (a *app) renderWithTimeout(job *previewJob) pane {
+	done := make(chan pane, 1)
 	go func() { done <- a.previewBody(job.entry, job.doc, job.grouped) }()
 	select {
-	case text := <-done:
-		return text
+	case p := <-done:
+		return p
 	case <-time.After(previewTimeout):
-		return "[#c0504d]" + tview.Escape(a.tr("slowFile")) + "[-]"
+		return pane{head: []string{"[#c0504d]" + tview.Escape(a.tr("slowFile")) + "[-]"}}
 	}
 }
 

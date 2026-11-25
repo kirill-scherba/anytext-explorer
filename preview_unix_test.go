@@ -35,12 +35,12 @@ func TestPreviewOfAPipeDoesNotBlock(t *testing.T) {
 		t.Fatal("a named pipe is not an ordinary file")
 	}
 	a := newApp(newInstall("http://127.0.0.1:1"), "ru", dir)
-	done := make(chan string, 1)
+	done := make(chan pane, 1)
 	go func() { done <- a.previewBody(entries[0], nil, false) }()
 	select {
-	case text := <-done:
-		if !strings.Contains(text, a.tr("notRegular")) {
-			t.Errorf("the pane does not say why it does not read the pipe:\n%s", text)
+	case p := <-done:
+		if !strings.Contains(strings.Join(p.head, "\n"), a.tr("notRegular")) {
+			t.Errorf("the pane does not say why it does not read the pipe:\n%v", p.head)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the preview of a named pipe blocked")
