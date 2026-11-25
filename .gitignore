@@ -1,0 +1,7 @@
+# builds
+/anytext-explorer
+/anytext-explorer.exe
+
+# editor and system noise
+*.swp
+.DS_Store
