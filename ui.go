@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -28,6 +29,14 @@ var (
 	colorTitle  = tcell.NewHexColor(0x7fb2e5)
 	colorFolder = tcell.NewHexColor(0x5fa8e0)
 )
+
+// previewJob is one render of the right pane, waiting for the cursor to settle.
+type previewJob struct {
+	entry   Entry
+	doc     *Doc
+	grouped bool
+	seq     int
+}
 
 // app is the explorer itself: the folder on the disk, the index state the installation reported, and
 // the widgets that draw both.
@@ -54,6 +63,12 @@ type app struct {
 	// a slow doc.list of a folder left behind must not paint over the folder on screen.
 	indexSeq   int
 	previewSeq int
+	// previewWanted is the line the pane should show, and previewSignal wakes the one worker that
+	// renders it: a held arrow key asks for ten panes a second, and a goroutine per keypress means
+	// ten full redraws queued behind each other - on a relay that reads as a freeze.
+	previewMu     sync.Mutex
+	previewWanted *previewJob
+	previewSignal chan struct{}
 	// indexKey is the document whose indexed text is open in the preview pane (F3). Moving the
 	// cursor forgets it.
 	indexKey string
@@ -76,7 +91,10 @@ func newApp(inst *Install, lang, dir string) *app {
 	if lang == "en" {
 		textsFor = enTexts
 	}
-	return &app{inst: inst, lang: lang, t: textsFor, dir: dir, state: map[string]*Doc{}}
+	return &app{
+		inst: inst, lang: lang, t: textsFor, dir: dir, state: map[string]*Doc{},
+		previewSignal: make(chan struct{}, 1),
+	}
 }
 
 // tr answers one interface string.
@@ -127,6 +145,7 @@ func (a *app) setup(screen tcell.Screen) {
 	a.pages = tview.NewPages().AddPage("main", root, true, true)
 	a.tui.SetRoot(a.pages, true)
 	a.tui.SetInputCapture(a.onKey)
+	go a.previewWorker()
 }
 
 // run starts the screen and blocks until the person leaves.
@@ -167,6 +186,7 @@ func (a *app) openFolderWith(dir, selectName string) error {
 		return err
 	}
 	a.setMessage(msgNone, "")
+	a.preview.Clear()
 	a.dir = clean
 	a.entries = entries
 	a.state = map[string]*Doc{}
@@ -451,31 +471,58 @@ func (a *app) open(row int) {
 	a.showIndexedText()
 }
 
-// previewRow draws the right pane for the line under the cursor.
+// previewRow asks for the pane of the line under the cursor. The work happens in previewWorker: the
+// event loop only places the request, so a held key never queues redraws behind itself.
 func (a *app) previewRow(row int) {
 	rows := a.rows()
 	idx := row - 1
 	if idx < 0 || idx >= len(rows) {
-		a.preview.SetText("")
+		// The cursor is between rows (a table refilled under it): the pane keeps what it shows.
+		// Blanking it in the middle of a move looks like a freeze of its own.
 		return
 	}
-	// What the pane needs is read here, in the goroutine that owns the state: the preview is built
-	// off the event loop, and the index state may be replaced meanwhile.
 	e := rows[idx]
-	doc := a.docOf(e.Path)
-	grouped := a.online && a.bucket != nil
 	a.indexKey = ""
 	a.previewSeq++
-	seq := a.previewSeq
-	go func() {
-		text := a.previewBody(e, doc, grouped)
+	a.previewMu.Lock()
+	a.previewWanted = &previewJob{
+		entry: e, doc: a.docOf(e.Path), grouped: a.online && a.bucket != nil, seq: a.previewSeq,
+	}
+	a.previewMu.Unlock()
+	select {
+	case a.previewSignal <- struct{}{}:
+	default:
+	}
+}
+
+// previewDebounce is how long the worker waits for the cursor to settle: shorter than a key repeat,
+// so a held key shows the pane of where it stopped, not of every line it passed.
+const previewDebounce = 60 * time.Millisecond
+
+// previewWorker renders the pane once per settled cursor position.
+func (a *app) previewWorker() {
+	for range a.previewSignal {
+		time.Sleep(previewDebounce)
+		// Another request came while we waited: it replaces this one, there is nothing to draw twice.
+		select {
+		case <-a.previewSignal:
+		default:
+		}
+		a.previewMu.Lock()
+		job := a.previewWanted
+		a.previewWanted = nil
+		a.previewMu.Unlock()
+		if job == nil {
+			continue
+		}
+		text := a.previewBody(job.entry, job.doc, job.grouped)
 		a.tui.QueueUpdateDraw(func() {
-			if seq != a.previewSeq {
+			if job.seq != a.previewSeq {
 				return
 			}
 			a.renderPreview(text)
 		})
-	}()
+	}
 }
 
 // rule is the marker of a horizontal line in the preview. The pane's width is known only when it is

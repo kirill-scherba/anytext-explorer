@@ -84,10 +84,10 @@ func waitFor(t *testing.T, sim tcell.SimulationScreen, a *app, want string) stri
 	t.Helper()
 	var last string
 	for i := 0; i < 100; i++ {
-		// A queued update is a barrier: it runs after everything queued before it, and blocks until
-		// the event loop has done so.
-		a.tui.QueueUpdateDraw(func() {})
-		last = screenText(sim)
+		// The screen is read on the event loop: a queued function is a barrier (it runs after
+		// everything queued before it) and the only goroutine allowed to look at cells while tview
+		// draws them.
+		a.tui.QueueUpdateDraw(func() { last = screenText(sim) })
 		if strings.Contains(last, want) {
 			return last
 		}

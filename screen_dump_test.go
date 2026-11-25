@@ -91,6 +91,7 @@ func TestDumpScreen(t *testing.T) {
 		}
 	})
 	time.Sleep(150 * time.Millisecond)
-	a.tui.QueueUpdateDraw(func() {})
-	t.Log("\n" + screenText(sim))
+	var text string
+	a.tui.QueueUpdateDraw(func() { text = screenText(sim) })
+	t.Log("\n" + text)
 }
