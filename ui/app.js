@@ -234,8 +234,13 @@ function drawCollections() {
   const box = $('collections')
   box.innerHTML = state.collections.map((b) => {
     const on = b.id === state.bucket ? ' on' : ''
-    return '<div class="collection' + on + '" data-id="' + esc(b.id) + '" title="' + esc(b.description || b.id) + '">' +
+    // The folders are shown with the collection: "why are there three files here" is answered by the
+    // path, and a collection is a name over one or more folders of the disk.
+    const folders = (b.folders || []).join(', ')
+    const title = [b.description, folders].filter(Boolean).join(' · ')
+    return '<div class="collection' + on + '" data-id="' + esc(b.id) + '" title="' + esc(title) + '">' +
       '<span class="name">' + esc(b.name || b.id) + '</span>' +
+      (on && folders ? '<span class="path">' + esc(folders) + '</span>' : '') +
       '</div>'
   }).join('') || '<div class="empty">коллекций нет</div>'
   box.querySelectorAll('.collection').forEach((el) => {

@@ -148,6 +148,11 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 .collection.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .collection .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .collection .n { margin-left: auto; color: var(--dim); font-size: 12px; }
+.collection { flex-wrap: wrap; }
+.collection .path {
+  flex: 0 0 100%; color: var(--dim); font-size: 10.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
+}
 
 .filters { display: flex; flex-direction: column; gap: 2px; }
 .filter {
