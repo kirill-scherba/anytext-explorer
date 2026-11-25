@@ -101,9 +101,9 @@ when the text lives in the index (a PDF, a picture, a recording).
   is reachable, so those are a decision about keys and confirmations, not about the installation.
 - No pictures: a terminal shows text. The address of a file in the browser is `/api/file`, and the
   explorer does not open browsers.
-- Windows: there is no terminal in the window there (`creack/pty` has no Windows support), so there is
-  nowhere for this program to run. A module would be the answer, and that is what the next decision is
-  about.
+- Windows: the program builds and runs there in an ordinary console, but the window has no terminal
+  (`creack/pty` has no Windows support), so there is no way to reach a remote installation through it.
+  A module would be the answer for remote Windows users, and that is what the next decision is about.
 - No mouse: the keys are the interface.
 
 ## Tests

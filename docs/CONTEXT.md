@@ -34,6 +34,11 @@ draws the real layout and the test reads the cells back as text (`ui_test.go`,
 instead of the first file, the header was cut in the middle of the path, and the rule of the preview
 wrapped onto a second line on a narrow pane.
 
+**Checked on every platform.** The program has no dependency on a pseudo-terminal: it draws on the
+terminal it is started in, so it builds for linux, darwin and windows alike. Reaching a *remote*
+installation is a different matter, and that is the window's terminal, which exists on linux and
+darwin only.
+
 ## Open questions
 
 - **Language of the file names and of the wording.** The screen speaks Russian and English (`-lang`,
