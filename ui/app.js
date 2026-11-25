@@ -741,7 +741,9 @@ function collectionFolders() {
   const out = new Set()
   const bucket = state.collections.find((b) => b.id === state.bucket)
   for (const f of (bucket && bucket.folders) || []) out.add(f)
-  for (const d of state.files) if (d.folder) out.add(d.folder)
+  // A link has no folder on the disk: its "folder" is the word the screen groups links under, and a
+  // file cannot be moved into a word.
+  for (const d of state.files) if (d.folder && d.kind !== 'link') out.add(d.folder)
   return [...out].sort((a, b) => a.localeCompare(b, 'ru'))
 }
 
