@@ -214,6 +214,7 @@ async function reload() {
     state.counts = data.counts || {}
     state.loadedAt = Date.now()
     drawFolders()
+    drawFilters()
     const wanted = new URLSearchParams(location.search).get('doc')
     if (wanted) {
       const doc = state.files.find((d) => d.key === wanted)
@@ -247,6 +248,13 @@ function drawCollections() {
     el.onclick = () => openCollection(el.dataset.id)
   })
 
+  drawFilters()
+}
+
+// drawFilters draws the state column: the counts of the whole collection and which of them is chosen.
+// It is called after every reload as well - a scan changes the numbers, and a filter with yesterday's
+// count is a filter that lies.
+function drawFilters() {
   const filters = [
     { id: '', label: 'все файлы', color: 'var(--accent)', n: state.files.length },
     { id: 'indexed', label: 'в поиске', color: 'var(--ok)', n: state.counts.indexed || 0 },
@@ -265,6 +273,7 @@ function drawCollections() {
     el.onclick = () => {
       state.filterState = el.dataset.state
       state.shown = PAGE_LIMIT
+      drawFilters()
       drawAll()
     }
   })
