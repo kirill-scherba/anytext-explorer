@@ -5,9 +5,13 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,6 +37,9 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/exclude", a.exclude)
 	mux.HandleFunc("POST /api/restore", a.restore)
 	mux.HandleFunc("POST /api/describe", a.describe)
+	mux.HandleFunc("POST /api/bulk", a.bulk)
+	mux.HandleFunc("POST /api/zip", a.zip)
+	mux.HandleFunc("POST /api/upload", a.upload)
 	// The screen itself: /ui/ is where the installation points the puzzle button.
 	mux.HandleFunc("GET /ui/", a.page)
 	mux.HandleFunc("GET /", a.page)
@@ -241,6 +248,152 @@ func (a *app) describe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "text": text})
+}
+
+// bulk runs one action over many documents: a person who marked forty files should not be made to
+// click forty times, and a browser should not send forty requests.
+func (a *app) bulk(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Action string   `json:"action"`
+		Bucket string   `json:"bucket"`
+		Docs   []string `json:"docs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Docs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужны документы"})
+		return
+	}
+	if !who(r).MayWrite {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "этой установке не разрешено менять документы"})
+		return
+	}
+	// A bulk of pictures described by a model takes minutes: the request is answered when it is done,
+	// and nothing here gives up on it first.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Minute)
+	defer cancel()
+	token := token(r)
+
+	done, failed := 0, []map[string]string{}
+	for _, doc := range req.Docs {
+		var err error
+		switch req.Action {
+		case "exclude":
+			err = a.install.Exclude(ctx, token, req.Bucket, doc)
+		case "restore":
+			err = a.install.Restore(ctx, token, req.Bucket, doc)
+		case "describe":
+			_, err = a.install.Describe(ctx, token, req.Bucket, doc)
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "неизвестное действие: " + req.Action})
+			return
+		}
+		if err != nil {
+			failed = append(failed, map[string]string{"doc": doc, "error": err.Error()})
+			continue
+		}
+		done++
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"done": done, "failed": failed})
+}
+
+// zip answers the chosen documents as one archive. A person marking twenty files wants them together,
+// and twenty separate dialogs of "save as" is not a download, it is a chore.
+func (a *app) zip(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Bucket string   `json:"bucket"`
+		Docs   []string `json:"docs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Docs) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужны документы"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Minute)
+	defer cancel()
+	token := token(r)
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="anytext-`+req.Bucket+`.zip"`)
+	w.Header().Set("Cache-Control", "no-store")
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	used := map[string]int{}
+	for _, doc := range req.Docs {
+		body, err := a.install.File(ctx, token, req.Bucket, doc)
+		if err != nil {
+			// One unreadable file must not lose the archive: it is listed in the archive as a note.
+			entry, _ := zw.Create(zipName(doc, used) + ".error.txt")
+			_, _ = io.WriteString(entry, err.Error())
+			continue
+		}
+		entry, err := zw.Create(zipName(doc, used))
+		if err != nil {
+			body.Close()
+			return
+		}
+		_, _ = io.Copy(entry, body)
+		body.Close()
+	}
+}
+
+// zipName answers the name of one document inside the archive: the file's own name, and a counter when
+// two folders hold a file with the same name.
+func zipName(key string, used map[string]int) string {
+	name := filepath.Base(key)
+	if name == "." || name == "/" || name == "" {
+		name = "file"
+	}
+	used[name]++
+	if n := used[name]; n > 1 {
+		ext := filepath.Ext(name)
+		name = strings.TrimSuffix(name, ext) + " (" + strconv.Itoa(n) + ")" + ext
+	}
+	return name
+}
+
+// upload puts files into a collection through the installation's own endpoint. The module is not a
+// second way to write files: it asks the installation, which knows where the collection keeps them.
+func (a *app) upload(w http.ResponseWriter, r *http.Request) {
+	bucket := r.URL.Query().Get("bucket")
+	if bucket == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужна коллекция"})
+		return
+	}
+	if !who(r).MayWrite {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "этой установке не разрешено добавлять файлы"})
+		return
+	}
+	mr, err := r.MultipartReader()
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Minute)
+	defer cancel()
+	token := token(r)
+
+	saved, failed := []string{}, []map[string]string{}
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+			return
+		}
+		if part.FileName() == "" {
+			part.Close()
+			continue
+		}
+		name := filepath.Base(part.FileName())
+		if err := a.install.Upload(ctx, token, bucket, name, part); err != nil {
+			failed = append(failed, map[string]string{"name": name, "error": err.Error()})
+		} else {
+			saved = append(saved, name)
+		}
+		part.Close()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"saved": saved, "failed": failed})
 }
 
 // writeJSON answers one JSON object.

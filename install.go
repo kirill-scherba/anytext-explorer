@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -210,6 +211,76 @@ func (in *Install) Scan(ctx context.Context, token, bucket, mode string) (map[st
 		return nil, err
 	}
 	return out, nil
+}
+
+// File answers the bytes of one document: the installation's own /api/file, asked with the person's
+// token. The module never reads a disk, so a download is a copy of a copy.
+func (in *Install) File(ctx context.Context, token, bucket, doc string) (io.ReadCloser, error) {
+	u := in.base + "/api/file?" + url.Values{"bucket": {bucket}, "doc": {doc}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := in.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return nil, fmt.Errorf("%s: %s", doc, snippet(raw))
+	}
+	return resp.Body, nil
+}
+
+// Upload puts one file into a collection through the installation's own endpoint, so the file lands
+// where the collection expects it and not where this program guesses. The body is streamed: a file of
+// two hundred megabytes must not be kept in memory twice.
+func (in *Install) Upload(ctx context.Context, token, bucket, name string, data io.Reader) error {
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		defer pw.Close()
+		_ = mw.WriteField("bucket", bucket)
+		part, err := mw.CreateFormFile("file", name)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		if _, err := io.Copy(part, data); err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = mw.Close()
+	}()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, in.base+"/api/upload", pr)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := in.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var answer struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(raw, &answer)
+	if answer.Error != "" {
+		return errors.New(answer.Error)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("upload: %s", snippet(raw))
+	}
+	return nil
 }
 
 // Permission is an "<img src>" address needs a permit that the browser can carry in the query: a

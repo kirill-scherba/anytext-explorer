@@ -45,6 +45,8 @@ const state = {
   person: { email: '', rights: [], may_write: true },
   shown: PAGE_LIMIT,
   loading: false,
+  picked: new Set(),
+  lastPicked: -1,
 }
 
 // ─── small helpers ──────────────────────────────────────────────────────
@@ -191,6 +193,8 @@ async function openCollection(id) {
   $('collection-name').textContent = bucket ? bucket.name : id
   state.folder = ''
   state.selected = null
+  state.picked.clear()
+  state.lastPicked = -1
   state.shown = PAGE_LIMIT
   closePreview()
   await reload()
@@ -304,6 +308,7 @@ function visibleFiles() {
 
 function drawAll() {
   const list = visibleFiles()
+  drawBulk(list)
   const shown = list.slice(0, state.shown)
   $('summary').textContent = list.length + ' из ' + state.files.length + ' файлов' +
     (state.filterState ? ' · фильтр: ' + stateOf({ state: state.filterState }).label : '') +
@@ -325,15 +330,36 @@ function drawAll() {
 
   if (state.view === 'grid') {
     box.className = 'grid'
-    box.innerHTML = shown.map((doc) => cardHTML(doc)).join('')
+    box.innerHTML = shown.map((doc, i) => cardHTML(doc, i)).join('')
   } else {
     box.className = 'list'
-    box.innerHTML = shown.map((doc) => rowHTML(doc)).join('')
+    box.innerHTML = shown.map((doc, i) => rowHTML(doc, i)).join('')
   }
 
   box.querySelectorAll('[data-key]').forEach((el) => {
-    el.onclick = () => select(el.dataset.key)
+    el.onclick = (ev) => {
+      if (ev.target.closest('[data-tick]')) return
+      select(el.dataset.key)
+    }
   })
+  box.querySelectorAll('[data-tick]').forEach((el) => {
+    el.onclick = (ev) => {
+      ev.stopPropagation()
+      const key = el.dataset.tick
+      const index = shown.findIndex((d) => d.key === key)
+      if (ev.shiftKey && state.lastPicked >= 0) {
+        const [from, to] = [state.lastPicked, index].sort((a, b) => a - b)
+        for (let i = from; i <= to; i++) state.picked.add(shown[i].key)
+      } else if (state.picked.has(key)) {
+        state.picked.delete(key)
+      } else {
+        state.picked.add(key)
+      }
+      state.lastPicked = index
+      drawAll()
+    }
+  })
+
 
   const more = $('more')
   if (list.length > shown.length) {
@@ -346,11 +372,13 @@ function drawAll() {
   }
 }
 
-function rowHTML(doc) {
+function rowHTML(doc, index) {
   const st = stateOf(doc)
   const on = state.selected === doc.key ? ' on' : ''
+  const ticked = state.picked.has(doc.key) ? ' checked' : ''
   const reason = doc.reason ? ' · ' + (REASON[doc.reason] || doc.reason) : ''
   return '<div class="row' + on + '" data-key="' + esc(doc.key) + '" role="listitem">' +
+    '<input type="checkbox" class="tick" data-tick="' + esc(doc.key) + '" data-index="' + index + '"' + ticked + ' />' +
     '<span class="dot" style="background:' + st.color + '"></span>' +
     '<span class="chip ' + st.cls + '">' + esc(st.label) + '</span>' +
     '<span class="name">' + esc(doc.name) + '<span class="sub">' + esc(doc.folder) + reason + '</span></span>' +
@@ -365,7 +393,9 @@ function cardHTML(doc) {
   const thumb = isImage(doc)
     ? '<img loading="lazy" src="' + thumbURL(doc, 320) + '" alt="" data-permit="' + esc(doc.key) + '" />'
     : '<span class="kind">' + (doc.kind === 'link' ? '🔗' : '📄') + '</span>'
-  return '<div class="card' + on + '" data-key="' + esc(doc.key) + '" role="listitem">' +
+  const ticked = state.picked.has(doc.key) ? ' checked' : ''
+  return '<div class="card' + on + (ticked ? ' picked' : '') + '" data-key="' + esc(doc.key) + '" role="listitem">' +
+    '<input type="checkbox" class="tick" data-tick="' + esc(doc.key) + '"' + ticked + ' />' +
     '<div class="thumb">' + thumb + '</div>' +
     '<div class="meta"><span class="name" title="' + esc(doc.name) + '">' + esc(doc.name) + '</span>' +
     '<span class="sub"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:' + st.color + '"></span>' +
@@ -621,6 +651,157 @@ function startOptions() {
     document.querySelectorAll('#view button').forEach((b) => b.classList.toggle('on', b.dataset.view === view))
   }
 }
+
+// ─── selection and group actions ────────────────────────────────────────
+
+function pickedDocs() {
+  return state.files.filter((d) => state.picked.has(d.key))
+}
+
+function drawBulk(list) {
+  const n = state.picked.size
+  $('bulkbar').hidden = n === 0
+  if (n) $('bulk-count').textContent = 'выбрано ' + n
+  list = list || visibleFiles()
+  const box = $('pick-all')
+  const all = list.length > 0 && list.every((d) => state.picked.has(d.key))
+  box.checked = all
+  box.indeterminate = !all && n > 0
+  box.disabled = list.length === 0
+}
+
+const BULK_DONE = {
+  exclude: 'убрано из поиска',
+  restore: 'возвращено в поиск',
+  describe: 'описано моделью',
+}
+
+async function bulk(action) {
+  if (action === 'clear') {
+    state.picked.clear()
+    state.lastPicked = -1
+    drawAll()
+    return
+  }
+  const docs = pickedDocs()
+  if (!docs.length) return
+  if (action === 'zip') {
+    await downloadZip(docs)
+    return
+  }
+  progress(true)
+  toast('выполняю: ' + docs.length + ' файлов…')
+  try {
+    const res = await post('api/bulk', {
+      action, bucket: state.bucket, docs: docs.map((d) => d.key),
+    })
+    const bad = (res.failed || []).length
+    toast(BULK_DONE[action] + ': ' + (res.done || 0) + (bad ? ', ошибок ' + bad : ''), bad ? 'bad' : 'good')
+    state.picked.clear()
+    state.lastPicked = -1
+    await reload()
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+// downloadZip asks the module for one archive of the chosen files: twenty separate "save as" dialogs
+// is not a download, it is a chore.
+async function downloadZip(docs) {
+  progress(true)
+  toast('собираю архив из ' + docs.length + ' файлов…')
+  try {
+    const res = await fetch('api/zip', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucket: state.bucket, docs: docs.map((d) => d.key) }),
+    })
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('zip')) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || ('HTTP ' + res.status))
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'anytext-' + state.bucket + '.zip'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+    toast('архив готов', 'good')
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+$('pick-all').onchange = (e) => {
+  const list = visibleFiles().slice(0, state.shown)
+  if (e.target.checked) list.forEach((d) => state.picked.add(d.key))
+  else list.forEach((d) => state.picked.delete(d.key))
+  drawAll()
+}
+
+document.querySelectorAll('[data-bulk]').forEach((el) => {
+  el.onclick = () => bulk(el.dataset.bulk)
+})
+
+// ─── adding files ───────────────────────────────────────────────────────
+
+async function uploadFiles(files) {
+  const list = [...(files || [])]
+  if (!list.length || !state.bucket) return
+  progress(true)
+  toast('добавляю файлов: ' + list.length + '…')
+  const form = new FormData()
+  for (const f of list) form.append('file', f, f.name)
+  try {
+    const res = await fetch('api/upload?bucket=' + encodeURIComponent(state.bucket), { method: 'POST', body: form })
+    const data = await res.json()
+    if (data.error) throw new Error(data.error)
+    const saved = (data.saved || []).length
+    const failed = (data.failed || []).length
+    toast('добавлено ' + saved + (failed ? ', ошибок ' + failed : '') + ' — индексирую…', failed ? 'bad' : 'good')
+    if (saved) {
+      await post('api/scan', { bucket: state.bucket, mode: 'changed' })
+      await reload()
+    }
+  } catch (e) {
+    toast('не удалось добавить: ' + e.message, 'bad')
+  } finally {
+    progress(false)
+    $('file-input').value = ''
+  }
+}
+
+$('btn-upload').onclick = () => $('file-input').click()
+$('file-input').onchange = (e) => uploadFiles(e.target.files)
+
+// Drag and drop: a person with the files in hand should not have to find a dialog.
+let dragDepth = 0
+const listArea = document.querySelector('.content')
+listArea.addEventListener('dragenter', (e) => {
+  if (!state.bucket || ![...(e.dataTransfer?.types || [])].includes('Files')) return
+  dragDepth += 1
+  $('drop').hidden = false
+})
+listArea.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (!dragDepth) $('drop').hidden = true
+})
+listArea.addEventListener('dragover', (e) => {
+  if (state.bucket) e.preventDefault()
+})
+listArea.addEventListener('drop', (e) => {
+  e.preventDefault()
+  dragDepth = 0
+  $('drop').hidden = true
+  uploadFiles(e.dataTransfer?.files)
+})
 
 // The last line of the file: nothing else waits for it.
 startOptions()

@@ -18,6 +18,8 @@
     <span class="badge-soft" id="collection-name">—</span>
   </div>
   <div class="bar-actions">
+    <button class="btn" id="btn-upload" title="Добавить файлы в коллекцию">Добавить файлы</button>
+    <input type="file" id="file-input" multiple hidden />
     <button class="btn" id="btn-refresh" title="Перечитать коллекцию">Обновить</button>
     <button class="btn" id="btn-scan" title="Проиндексировать новое и изменённое">Просканировать</button>
   </div>
@@ -47,6 +49,9 @@
 
   <main class="content">
     <div class="toolbar">
+      <label class="pick" title="Выбрать все в текущем фильтре">
+        <input type="checkbox" id="pick-all" />
+      </label>
       <span id="summary" class="summary">—</span>
       <div class="toolbar-right">
         <div class="segmented" id="sort" role="group" aria-label="Сортировка">
@@ -62,7 +67,19 @@
       </div>
     </div>
 
+    <div id="bulkbar" class="bulkbar" hidden>
+      <span class="bulk-count" id="bulk-count">выбрано 0</span>
+      <div class="bulk-actions">
+        <button class="btn" data-bulk="zip" title="Скачать выбранные одним архивом">Скачать zip</button>
+        <button class="btn accent" data-bulk="describe" title="Описать картинки моделью">Описать моделью</button>
+        <button class="btn danger" data-bulk="exclude" title="Убрать из поиска, файлы останутся">Убрать из поиска</button>
+        <button class="btn" data-bulk="restore" title="Вернуть в поиск">Вернуть в поиск</button>
+        <button class="btn" data-bulk="clear" title="Снять выделение">Снять</button>
+      </div>
+    </div>
+
     <div id="list" class="list" role="list"></div>
+    <div id="drop" class="drop" hidden><span>отпустите файлы — они добавятся в коллекцию</span></div>
     <div id="more" class="more" hidden></div>
   </main>
 

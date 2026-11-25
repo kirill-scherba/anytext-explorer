@@ -83,6 +83,15 @@ The window shows it under the puzzle button; through the relay it is at
 - **right**: the preview — the picture, what the file is, and the text the index holds; with the
   actions: open, download, exclude from the search or put it back, describe a picture with the model.
 
+**Group actions.** A checkbox in every row, Shift for a range, and a checkbox in the toolbar that takes
+everything in the current filter. With a selection the bar appears: *Скачать zip*, *Описать моделью*,
+*Убрать из поиска*, *Вернуть в поиск*, *Снять*. One request runs the action over the whole selection
+and answers what failed, so one unreadable file does not stop the rest.
+
+**Adding files.** *Добавить файлы* in the bar, or drop them onto the list: the module streams them to
+the installation's own `/api/upload` — it has no files of its own — and then asks for an incremental
+scan, so the new files are in the search when the screen refreshes.
+
 | Mark | State | What it means |
 |---|---|---|
 | `●` green | в поиске | the search finds it: text, description or transcript is in the index |
@@ -104,6 +113,9 @@ that file — which is also how a person shares what he found.
 | `POST /api/scan` | index the new and changed files of a collection |
 | `POST /api/exclude` / `POST /api/restore` | out of the search / back into it |
 | `POST /api/describe` | describe a picture with the vision model |
+| `POST /api/bulk` | one action over many documents: `exclude`, `restore`, `describe` |
+| `POST /api/zip` | the chosen documents as one archive (a name clash becomes `note (2).md`) |
+| `POST /api/upload?bucket=` | multipart files, forwarded to the installation's `/api/upload` |
 | `GET /health` | the supervisor's question |
 
 Every request carries the person's account token to `/api/command`: the installation decides what that
@@ -111,8 +123,6 @@ person may do, and the screen only hides the buttons that would be refused.
 
 ## What it does not do yet
 
-- **no upload**: adding a file is the window's own "+" button, and a second way to put a file into a
-  collection is a second set of rules about where it lands;
 - **no rename, move or delete of a file**: those need commands the installation does not have. The
   module deliberately has no files of its own, so it cannot do them behind the installation's back;
 - **the whole collection is read at once** (`doc.list` with a high limit). A collection of two hundred

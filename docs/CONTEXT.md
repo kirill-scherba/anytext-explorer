@@ -35,6 +35,25 @@ from the same place (test: `TestAReaderMayNotChangeAndIsToldSo`).
 the preview of a picture with the OCR text the index holds; the same page at `/api/module/explorer/ui/`
 through the installation's proxy; screenshots of both themes and both views.
 
+## 25.11.2026 — group actions and adding files
+
+Kirill after the first look: "доделать недостающие функции и будет отлично! не хватает групповых
+действий".
+
+- **Selection**: a checkbox in every row of the list and of the grid, Shift for a range, and a checkbox
+  in the toolbar that takes everything in the current filter (with the "some are chosen" state).
+- **One request per action, not one per file**: `POST /api/bulk` runs exclude, restore or describe over
+  the whole selection and answers `{done, failed[]}` — one unreadable file must not stop the other
+  thirty-nine, and a browser must not send forty requests.
+- **`POST /api/zip`**: the chosen files as one archive, streamed. Twenty separate "save as" dialogs is
+  not a download. A name clash becomes `note (2).md`, an unreadable file becomes `name.error.txt` in the
+  archive rather than a lost archive.
+- **Adding files**: a button and drag-and-drop; the module streams the multipart body to the
+  installation's `/api/upload` and asks for an incremental scan — it still has no files of its own.
+- Checked on the live collection: a zip of three keys (with a duplicate) came back as three entries,
+  `note.md` and `Account 0.txt` were excluded and restored (`excluded: 2 → 0`, `indexed: 40 → 40`).
+  Tests: bulk, the refusal to a reader, the zip and its name clash, the upload through the installation.
+
 ## What is next
 
 - **Upload** from the screen: it belongs to the window's "+" for now, and a second way to put a file
