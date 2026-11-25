@@ -46,8 +46,9 @@ type app struct {
 	counts  map[string]int
 	bucket  *Bucket
 
-	online bool
-	busy   string
+	online  bool
+	busy    string
+	msgKind int
 
 	// indexSeq and previewSeq drop the answers of requests a person has already navigated away from:
 	// a slow doc.list of a folder left behind must not paint over the folder on screen.
@@ -146,7 +147,7 @@ func (a *app) start() error {
 		// A folder is still worth showing without the installation: the explorer is a file manager
 		// first, and the index state is what it adds on top.
 		a.online = false
-		a.setMessage(a.tr("offline"), true)
+		a.setMessage(msgError, a.tr("offline"))
 	} else {
 		a.online = true
 		a.buckets = buckets
@@ -165,6 +166,7 @@ func (a *app) openFolderWith(dir, selectName string) error {
 	if err != nil {
 		return err
 	}
+	a.setMessage(msgNone, "")
 	a.dir = clean
 	a.entries = entries
 	a.state = map[string]*Doc{}
@@ -350,17 +352,36 @@ func (a *app) count(n int, key string) string {
 	return fmt.Sprintf("%d %s", n, a.tr(key))
 }
 
-// setMessage writes the line under the list: what happened, or what went wrong.
-func (a *app) setMessage(text string, isErr bool) {
+// The kinds of the status line. A line that says "reading the index state" must not wipe the answer
+// of a scan that has just finished, and an answer must not outlive the folder a person has left.
+const (
+	msgNone = iota
+	msgBusy
+	msgResult
+	msgError
+)
+
+// setMessage writes the line under the list: what is running, what happened, or what went wrong.
+func (a *app) setMessage(kind int, text string) {
+	a.msgKind = kind
 	if text == "" {
 		a.status.SetText("")
 		return
 	}
-	if isErr {
+	switch kind {
+	case msgError:
 		a.status.SetText(" [#c0504d]" + tview.Escape(text) + "[-]")
-		return
+	case msgResult:
+		a.status.SetText(" [::b]" + tview.Escape(text) + "[-:-:-]")
+	default:
+		a.status.SetText(" [::d]" + tview.Escape(text) + "[-:-:-]")
 	}
-	a.status.SetText(" [::d]" + tview.Escape(text) + "[-:-:-]")
+}
+
+// quiet reports whether the status line may be taken by a background request: a result or an error
+// of a finished action stays until the person does something.
+func (a *app) quiet() bool {
+	return a.msgKind == msgNone || a.msgKind == msgBusy
 }
 
 // refreshIndex asks the installation about the files of the current folder, in the background: the
@@ -373,7 +394,9 @@ func (a *app) refreshIndex() {
 	dir, bucketID := a.dir, a.bucket.ID
 	a.indexSeq++
 	seq := a.indexSeq
-	a.setMessage(a.tr("loading"), false)
+	if a.quiet() {
+		a.setMessage(msgBusy, a.tr("loading"))
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
@@ -383,12 +406,14 @@ func (a *app) refreshIndex() {
 				return
 			}
 			if err != nil {
-				a.setMessage(err.Error(), true)
+				a.setMessage(msgError, err.Error())
 				return
 			}
 			a.state = docsByPath(list)
 			a.counts = list.Counts
-			a.setMessage("", false)
+			if a.msgKind == msgBusy {
+				a.setMessage(msgNone, "")
+			}
 			a.drawList()
 			a.drawHeader()
 			a.previewRow(a.selectedRow())
@@ -419,7 +444,7 @@ func (a *app) open(row int) {
 			left = filepath.Base(a.dir)
 		}
 		if err := a.openFolderWith(e.Path, left); err != nil {
-			a.setMessage(err.Error(), true)
+			a.setMessage(msgError, err.Error())
 		}
 		return
 	}
@@ -434,12 +459,16 @@ func (a *app) previewRow(row int) {
 		a.preview.SetText("")
 		return
 	}
+	// What the pane needs is read here, in the goroutine that owns the state: the preview is built
+	// off the event loop, and the index state may be replaced meanwhile.
 	e := rows[idx]
+	doc := a.docOf(e.Path)
+	grouped := a.online && a.bucket != nil
 	a.indexKey = ""
 	a.previewSeq++
 	seq := a.previewSeq
 	go func() {
-		text := a.previewBody(e)
+		text := a.previewBody(e, doc, grouped)
 		a.tui.QueueUpdateDraw(func() {
 			if seq != a.previewSeq {
 				return
@@ -465,7 +494,7 @@ func (a *app) renderPreview(text string) {
 
 // previewBody is the preview: what the file is, what the installation thinks of it, and as much of
 // its text as fits the glance.
-func (a *app) previewBody(e Entry) string {
+func (a *app) previewBody(e Entry, doc *Doc, grouped bool) string {
 	var b strings.Builder
 	title := e.Name
 	if e.Name == ".." {
@@ -481,13 +510,12 @@ func (a *app) previewBody(e Entry) string {
 	}
 	b.WriteString(fmt.Sprintf("[::d]%s[-:-:-] · %s · %s %s\n",
 		tview.Escape(kindOf(e.Path)), humanSize(e.Size), a.tr("metaModified"), e.ModTime.Format("02.01.06 15:04")))
-	doc := a.docOf(e.Path)
 	if doc != nil {
 		b.WriteString(a.tr("metaState") + ": " + stateText(a.tr, doc) + "\n")
 		if doc.Description != "" {
 			b.WriteString("[::d]" + a.tr("description") + ":[-:-:-] " + tview.Escape(doc.Description) + "\n")
 		}
-	} else if a.online && a.bucket != nil {
+	} else if grouped {
 		b.WriteString("[::d]" + a.tr("outsideKnown") + "[-:-:-]\n")
 	}
 	b.WriteString(rule + "\n")
@@ -521,16 +549,16 @@ func (a *app) showIndexedText() {
 	doc := a.docOf(e.Path)
 	if doc == nil {
 		if !a.online || a.bucket == nil {
-			a.setMessage(a.tr("offline"), true)
+			a.setMessage(msgError, a.tr("offline"))
 			return
 		}
-		a.setMessage(a.tr("needCollection"), true)
+		a.setMessage(msgError, a.tr("needCollection"))
 		return
 	}
 	a.indexKey = e.Path
 	a.previewSeq++
 	seq := a.previewSeq
-	a.setMessage(a.tr("asking"), false)
+	a.setMessage(msgBusy, a.tr("asking"))
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
@@ -540,10 +568,10 @@ func (a *app) showIndexedText() {
 				return
 			}
 			if err != nil {
-				a.setMessage(err.Error(), true)
+				a.setMessage(msgError, err.Error())
 				return
 			}
-			a.setMessage("", false)
+			a.setMessage(msgNone, "")
 			a.renderPreview(indexedBody(a.tr, *e, doc, txt))
 		})
 	}()
@@ -557,7 +585,7 @@ func indexedBody(tr func(string) string, e Entry, doc *Doc, txt *DocText) string
 	b.WriteString("[::d]" + tr("indexText") + " · " + stateText(tr, doc) + "[-:-:-]\n")
 	if txt != nil {
 		if txt.Kind != "" {
-			b.WriteString("[::d]" + tview.Escape(txt.Kind) + " · " + fmt.Sprintf("%d %s", txt.Chunks, "фрагм.") + "[-:-:-]\n")
+			b.WriteString("[::d]" + tview.Escape(txt.Kind) + "[-:-:-]\n")
 		}
 		if txt.Truncated {
 			b.WriteString("[#d7a02b]" + tr("truncated") + "[-]\n")
@@ -591,7 +619,7 @@ func (a *app) reloadDir() {
 		name = e.Name
 	}
 	if err := a.openFolderWith(a.dir, name); err != nil {
-		a.setMessage(err.Error(), true)
+		a.setMessage(msgError, err.Error())
 	}
 }
 
@@ -599,7 +627,7 @@ func (a *app) reloadDir() {
 func (a *app) scan() {
 	bucket := a.bucket
 	if bucket == nil {
-		a.setMessage(a.tr("needCollection"), true)
+		a.setMessage(msgError, a.tr("needCollection"))
 		return
 	}
 	a.runLong(a.tr("scanning"), func(ctx context.Context) (string, error) {
@@ -620,7 +648,7 @@ func (a *app) exclude() {
 	}
 	doc := a.docOf(e.Path)
 	if doc == nil {
-		a.setMessage(a.tr("needCollection"), true)
+		a.setMessage(msgError, a.tr("needCollection"))
 		return
 	}
 	if doc.State == stateExcluded {
@@ -650,7 +678,7 @@ func (a *app) describe() {
 	}
 	doc := a.docOf(e.Path)
 	if doc == nil {
-		a.setMessage(a.tr("needCollection"), true)
+		a.setMessage(msgError, a.tr("needCollection"))
 		return
 	}
 	a.runLong(a.tr("describing"), func(ctx context.Context) (string, error) {
@@ -669,7 +697,7 @@ func (a *app) runLong(label string, fn func(context.Context) (string, error)) {
 	}
 	a.busy = label
 	a.drawHeader()
-	a.setMessage(label, false)
+	a.setMessage(msgBusy, label)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 		defer cancel()
@@ -677,13 +705,12 @@ func (a *app) runLong(label string, fn func(context.Context) (string, error)) {
 		a.tui.QueueUpdateDraw(func() {
 			a.busy = ""
 			a.drawHeader()
-			if err != nil {
-				a.setMessage(err.Error(), true)
-			} else {
-				a.setMessage(text, false)
-			}
 			a.reloadDir()
-			a.refreshIndex()
+			if err != nil {
+				a.setMessage(msgError, err.Error())
+			} else {
+				a.setMessage(msgResult, text)
+			}
 		})
 	}()
 }
@@ -724,7 +751,7 @@ func (a *app) onKey(ev *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case tcell.KeyF7:
 		if a.bucket == nil {
-			a.setMessage(a.tr("needCollection"), true)
+			a.setMessage(msgError, a.tr("needCollection"))
 			return nil
 		}
 		bucket := a.bucket
@@ -761,7 +788,7 @@ func (a *app) goUp() {
 		return
 	}
 	if err := a.openFolderWith(parent, filepath.Base(a.dir)); err != nil {
-		a.setMessage(err.Error(), true)
+		a.setMessage(msgError, err.Error())
 	}
 }
 
