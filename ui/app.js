@@ -612,6 +612,18 @@ $('q').oninput = (e) => {
 }
 
 document.addEventListener('keydown', (e) => {
+  // Delete removes what is marked, or the file the preview shows: the key a person presses without
+  // looking for a button.
+  if (e.key === 'Delete' && $('modal').hidden && !state.loading) {
+    e.preventDefault()
+    if (state.picked.size > 0) {
+      bulk('delete')
+      return
+    }
+    const doc = state.selected ? state.files.find((d) => d.key === state.selected) : null
+    if (doc) deleteDoc(doc)
+    return
+  }
   if (e.key === '/' && document.activeElement !== $('q')) {
     e.preventDefault()
     $('q').focus()
@@ -882,6 +894,8 @@ const BULK_DONE = {
   exclude: 'убрано из поиска',
   restore: 'возвращено в поиск',
   describe: 'описано моделью',
+  move: 'перемещено',
+  delete: 'удалено с диска',
 }
 
 async function bulk(action) {
@@ -897,16 +911,50 @@ async function bulk(action) {
     await downloadZip(docs)
     return
   }
+  // Two actions ask a question first: where to put the files, and whether to really erase them.
+  if (action === 'move') {
+    const folders = collectionFolders()
+    openModal('Переместить ' + docs.length + ' файлов',
+      '<p>Куда положить выбранные файлы. Имена останутся прежними.</p>' +
+      '<select id="f-folder">' + folders.map((f) =>
+        '<option value="' + esc(f) + '">' + esc(f) + '</option>').join('') + '</select>', [
+        { label: 'Отмена', onClick: () => closeModal() },
+        { label: 'Переместить', kind: 'primary', onClick: () => runBulk('move', $('f-folder').value) },
+      ])
+    return
+  }
+  if (action === 'delete') {
+    openModal('Удалить ' + docs.length + ' файлов',
+      '<p>Файлы будут удалены с диска, документы — из поиска. Это не отмена.</p>' +
+      '<p style="color:var(--text)">' + docs.slice(0, 12).map((d) => esc(d.name)).join('<br />') +
+      (docs.length > 12 ? '<br />… и ещё ' + (docs.length - 12) : '') + '</p>', [
+        { label: 'Отмена', onClick: () => closeModal() },
+        { label: 'Удалить', kind: 'danger', onClick: () => runBulk('delete') },
+      ])
+    return
+  }
+  await runBulk(action)
+}
+
+// runBulk is the request itself, once the question (if any) is answered.
+async function runBulk(action, folder) {
+  const docs = pickedDocs()
+  if (!docs.length) return
+  closeModal()
   progress(true)
   toast('выполняю: ' + docs.length + ' файлов…')
   try {
     const res = await post('api/bulk', {
-      action, bucket: state.bucket, docs: docs.map((d) => d.key),
+      action, bucket: state.bucket, docs: docs.map((d) => d.key), folder: folder || '',
     })
     const bad = (res.failed || []).length
     toast(BULK_DONE[action] + ': ' + (res.done || 0) + (bad ? ', ошибок ' + bad : ''), bad ? 'bad' : 'good')
     state.picked.clear()
     state.lastPicked = -1
+    // A move changes the addresses the index knows: the new ones come from a scan, not from a guess.
+    if (action === 'move') await scanQuiet()
+    state.selected = null
+    closePreview()
     await reload()
   } catch (e) {
     toast(e.message, 'bad')

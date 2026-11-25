@@ -261,6 +261,7 @@ func (a *app) bulk(w http.ResponseWriter, r *http.Request) {
 		Action string   `json:"action"`
 		Bucket string   `json:"bucket"`
 		Docs   []string `json:"docs"`
+		Folder string   `json:"folder"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Docs) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужны документы"})
@@ -286,6 +287,15 @@ func (a *app) bulk(w http.ResponseWriter, r *http.Request) {
 			err = a.install.Restore(ctx, token, req.Bucket, doc)
 		case "describe":
 			_, err = a.install.Describe(ctx, token, req.Bucket, doc)
+		case "move":
+			// A group move keeps the names: forty files renamed to one name is not a wish anyone has.
+			if strings.TrimSpace(req.Folder) == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужна папка"})
+				return
+			}
+			_, err = a.install.Move(ctx, token, req.Bucket, doc, req.Folder, "")
+		case "delete":
+			err = a.install.Delete(ctx, token, req.Bucket, doc)
 		default:
 			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "неизвестное действие: " + req.Action})
 			return
