@@ -22,6 +22,9 @@ type Entry struct {
 	Dir     bool
 	Size    int64
 	ModTime time.Time
+	// Regular says the entry is an ordinary file: a pipe, a socket or a device is not read, because
+	// opening one can block until a writer appears - and that freezes the pane for good.
+	Regular bool
 	// Doc is the installation's opinion of this file: in the search, skipped and why, which text was
 	// taken. It is nil for a folder, for a file outside every collection, and while the index is
 	// still being read.
@@ -37,29 +40,30 @@ func readDir(dir string) ([]Entry, error) {
 	}
 	out := make([]Entry, 0, len(items))
 	for _, it := range items {
+		path := filepath.Join(dir, it.Name())
 		info, err := it.Info()
 		if err != nil {
 			// A file that vanished between the listing and the stat is not a reason to show an
 			// empty folder: the row is kept with the name alone.
-			out = append(out, Entry{Name: it.Name(), Path: filepath.Join(dir, it.Name()), Dir: it.IsDir()})
+			out = append(out, Entry{Name: it.Name(), Path: path, Dir: it.IsDir()})
 			continue
 		}
-		e := Entry{
-			Name:    it.Name(),
-			Path:    filepath.Join(dir, it.Name()),
-			Dir:     it.IsDir(),
-			Size:    info.Size(),
-			ModTime: info.ModTime(),
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			// A link to a folder is worth entering; the name says so, the list says "папка".
-			if target, err := os.Stat(e.Path); err == nil {
-				e.Dir = target.IsDir()
-				e.Size = target.Size()
-				e.ModTime = target.ModTime()
+		mode := info.Mode()
+		if mode&os.ModeSymlink != 0 {
+			// A link is shown by what it points at: a link to a folder is worth entering, and a link
+			// to nothing is neither a folder nor a file to read.
+			if st, err := os.Stat(path); err == nil {
+				mode, info = st.Mode(), st
 			}
 		}
-		out = append(out, e)
+		out = append(out, Entry{
+			Name:    it.Name(),
+			Path:    path,
+			Dir:     mode.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+			Regular: mode.IsRegular(),
+		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Dir != out[j].Dir {

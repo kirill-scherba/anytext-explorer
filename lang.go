@@ -26,6 +26,9 @@ var ruTexts = texts{
 	"folder":       "папка",
 	"inFolder":     "в папке",
 	"items":        "%d элементов",
+	"itemsMany":    "больше %d элементов",
+	"notRegular":   "это не обычный файл (ссылка, сокет или устройство) — не читаю",
+	"slowFile":     "файл не отвечает: папка на медленном диске или файл занят",
 
 	"stateIndexed":   "в поиске",
 	"stateSkipped":   "пропущено",
@@ -92,6 +95,9 @@ var enTexts = texts{
 	"folder":       "folder",
 	"inFolder":     "in the folder",
 	"items":        "%d items",
+	"itemsMany":    "more than %d items",
+	"notRegular":   "this is not an ordinary file (a link, a socket or a device) — not read",
+	"slowFile":     "the file does not answer: a folder on a slow disk, or the file is busy",
 
 	"stateIndexed":   "in search",
 	"stateSkipped":   "skipped",

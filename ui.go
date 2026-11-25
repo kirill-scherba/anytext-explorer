@@ -515,7 +515,7 @@ func (a *app) previewWorker() {
 		if job == nil {
 			continue
 		}
-		text := a.previewBody(job.entry, job.doc, job.grouped)
+		text := a.renderWithTimeout(job)
 		a.tui.QueueUpdateDraw(func() {
 			if job.seq != a.previewSeq {
 				return
@@ -550,9 +550,17 @@ func (a *app) previewBody(e Entry, doc *Doc, grouped bool) string {
 	b.WriteString("[::b]" + tview.Escape(title) + "[-:-:-]\n")
 	if e.Dir {
 		b.WriteString("[::d]" + a.tr("folder") + "[-:-:-]\n")
-		if n := countChildren(e.Path); n >= 0 {
+		switch n := countChildren(e.Path); {
+		case n == -childCountLimit:
+			b.WriteString("[::d]" + a.tr("inFolder") + ": " + fmt.Sprintf(a.tr("itemsMany"), childCountLimit) + "[-:-:-]\n")
+		case n >= 0:
 			b.WriteString("[::d]" + a.tr("inFolder") + ": " + fmt.Sprintf(a.tr("items"), n) + "[-:-:-]\n")
 		}
+		return b.String()
+	}
+	if !e.Regular {
+		// A pipe, a socket, a device: opening one waits for a writer that may never come.
+		b.WriteString("[::d]" + a.tr("notRegular") + "[-:-:-]\n")
 		return b.String()
 	}
 	b.WriteString(fmt.Sprintf("[::d]%s[-:-:-] · %s · %s %s\n",
@@ -573,7 +581,7 @@ func (a *app) previewBody(e Entry, doc *Doc, grouped bool) string {
 // previewText picks the text for the pane: the file itself when it is text, the index when it is the
 // only place the text lives.
 func (a *app) previewText(e Entry, doc *Doc) string {
-	if isText(e.Path) {
+	if isText(e.Path) && e.Regular {
 		text, err := localText(e.Path, 64<<10)
 		if err == nil {
 			return clipLines(text, 500)
@@ -655,6 +663,23 @@ func indexedBody(tr func(string) string, e Entry, doc *Doc, txt *DocText) string
 		b.WriteString("[::d]" + tr("noPreview") + "[-:-:-]")
 	}
 	return b.String()
+}
+
+// previewTimeout is how long a file may take to describe itself. A folder on a network that stopped
+// answering is a reason to say so, not a reason to lose the pane until the program is restarted.
+const previewTimeout = 3 * time.Second
+
+// renderWithTimeout builds the pane, but never waits longer than previewTimeout. A request that does
+// not answer is left behind: its goroutine ends when the read ends, and the pane says what happened.
+func (a *app) renderWithTimeout(job *previewJob) string {
+	done := make(chan string, 1)
+	go func() { done <- a.previewBody(job.entry, job.doc, job.grouped) }()
+	select {
+	case text := <-done:
+		return text
+	case <-time.After(previewTimeout):
+		return "[#c0504d]" + tview.Escape(a.tr("slowFile")) + "[-]"
+	}
 }
 
 // ─── actions ────────────────────────────────────────────────────────────────
@@ -897,13 +922,21 @@ func kindOf(path string) string {
 	return ext
 }
 
-// countChildren answers how many lines a folder holds; -1 when it cannot be read.
+// countChildren answers how many lines a folder holds; -1 when it cannot be read. It stops after
+// childCountLimit names: a folder of two hundred thousand files is counted as "many", not read whole.
+const childCountLimit = 1000
+
 func countChildren(dir string) int {
-	items, err := os.ReadDir(dir)
+	f, err := os.Open(dir)
 	if err != nil {
 		return -1
 	}
-	return len(items)
+	defer f.Close()
+	names, _ := f.Readdirnames(childCountLimit + 1)
+	if len(names) > childCountLimit {
+		return -childCountLimit
+	}
+	return len(names)
 }
 
 // clipLines cuts a text to a number of lines: the pane is a glance, and a key opens the whole text.
