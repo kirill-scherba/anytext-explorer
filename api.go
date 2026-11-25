@@ -40,6 +40,10 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("POST /api/bulk", a.bulk)
 	mux.HandleFunc("POST /api/zip", a.zip)
 	mux.HandleFunc("POST /api/upload", a.upload)
+	mux.HandleFunc("POST /api/move", a.move)
+	mux.HandleFunc("POST /api/delete", a.delete)
+	mux.HandleFunc("POST /api/save", a.save)
+	mux.HandleFunc("GET /api/raw", a.raw)
 	// The screen itself: /ui/ is where the installation points the puzzle button.
 	mux.HandleFunc("GET /ui/", a.page)
 	mux.HandleFunc("GET /", a.page)
@@ -394,6 +398,98 @@ func (a *app) upload(w http.ResponseWriter, r *http.Request) {
 		part.Close()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"saved": saved, "failed": failed})
+}
+
+// move renames or moves the file of one document. The folder must be one of the collection's: a file
+// that leaves them is a file the index no longer owns.
+func (a *app) move(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Bucket string `json:"bucket"`
+		Doc    string `json:"doc"`
+		Folder string `json:"folder"`
+		Name   string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Doc == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужен документ"})
+		return
+	}
+	if !who(r).MayWrite {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "этой установке не разрешено менять документы"})
+		return
+	}
+	res, err := a.install.Move(r.Context(), token(r), req.Bucket, req.Doc, req.Folder, req.Name)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// delete removes the file itself, with the document. The screen asks first; this is the door.
+func (a *app) delete(w http.ResponseWriter, r *http.Request) {
+	req, ok := readAction(w, r)
+	if !ok {
+		return
+	}
+	if err := a.install.Delete(r.Context(), token(r), req.Bucket, req.Doc); err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// save keeps a person's words: the correction of a text the search holds (kind: text, description,
+// audio), or the text file itself (kind: file).
+func (a *app) save(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Bucket string `json:"bucket"`
+		Doc    string `json:"doc"`
+		Kind   string `json:"kind"`
+		Text   string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Doc == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужен документ"})
+		return
+	}
+	if !who(r).MayWrite {
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "этой установке не разрешено менять документы"})
+		return
+	}
+	var err error
+	if req.Kind == "file" {
+		err = a.install.SaveRaw(r.Context(), token(r), req.Bucket, req.Doc, req.Text)
+	} else {
+		err = a.install.SaveText(r.Context(), token(r), req.Bucket, req.Doc, req.Kind, req.Text)
+	}
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// raw answers the text of a text file as it is on the disk: the editor shows the file, not the index.
+func (a *app) raw(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	doc := q.Get("doc")
+	if doc == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "нужен документ"})
+		return
+	}
+	body, err := a.install.File(r.Context(), token(r), q.Get("bucket"), doc)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	defer body.Close()
+	// A text file, not an archive: an editor that reads four megabytes of anything is a browser tab
+	// nobody asked for.
+	data, err := io.ReadAll(io.LimitReader(body, 4<<20))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"text": string(data)})
 }
 
 // writeJSON answers one JSON object.

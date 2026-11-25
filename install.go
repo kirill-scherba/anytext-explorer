@@ -283,6 +283,41 @@ func (in *Install) Upload(ctx context.Context, token, bucket, name string, data 
 	return nil
 }
 
+// Move renames or moves the file of one document. An empty folder means the same folder, an empty
+// name means the same name.
+func (in *Install) Move(ctx context.Context, token, bucket, doc, folder, name string) (map[string]any, error) {
+	var out map[string]any
+	if err := in.command(ctx, token, "file.move", map[string]any{
+		"bucket": bucket, "doc": doc, "folder": folder, "name": name,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Delete removes the file itself: the document leaves the search and the file leaves the disk.
+func (in *Install) Delete(ctx context.Context, token, bucket, doc string) error {
+	return in.command(ctx, token, "doc.delete", map[string]any{
+		"bucket": bucket, "doc": doc, "delete_file": true,
+	}, nil)
+}
+
+// SaveText keeps a person's correction of one of the three texts the search holds: the extracted
+// text, the description of a picture, the transcript of a recording. It is the same correction the
+// document window makes (doc.save_text), and the scan leaves it as typed.
+func (in *Install) SaveText(ctx context.Context, token, bucket, doc, kind, text string) error {
+	return in.command(ctx, token, "doc.save_text", map[string]any{
+		"bucket": bucket, "doc": doc, "kind": kind, "text": text,
+	}, nil)
+}
+
+// SaveRaw writes a text file itself: the notes and the markdown a person edits in place.
+func (in *Install) SaveRaw(ctx context.Context, token, bucket, doc, text string) error {
+	return in.command(ctx, token, "doc.save_raw", map[string]any{
+		"bucket": bucket, "doc": doc, "text": text,
+	}, nil)
+}
+
 // Permission is an "<img src>" address needs a permit that the browser can carry in the query: a
 // browser cannot put an Authorization header on a picture, and the relay refuses an address without
 // one (anytext-gallery, 23.11.2026). One permit serves the whole screen for ten minutes.

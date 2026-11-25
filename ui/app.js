@@ -481,14 +481,20 @@ async function openPreview(doc) {
     a.click()
     a.remove()
   }))
+  if (doc.kind === 'text') {
+    buttons.push(button('Править файл', () => editFile(doc)))
+  }
   if (doc.state === 'excluded') {
     buttons.push(button('Вернуть в поиск', () => act('api/restore', doc, 'возвращён в поиск')))
   } else {
-    buttons.push(button('Убрать из поиска', () => act('api/exclude', doc, 'убран из поиска, файл на месте'), 'danger'))
+    buttons.push(button('Убрать из поиска', () => act('api/exclude', doc, 'убран из поиска, файл на месте')))
   }
   if (isImage(doc)) {
     buttons.push(button('Описать моделью', () => describe(doc), 'accent'))
   }
+  buttons.push(button('Переименовать', () => renameDoc(doc)))
+  buttons.push(button('Переместить', () => moveDoc(doc)))
+  buttons.push(button('Удалить', () => deleteDoc(doc), 'danger'))
   $('preview-actions').innerHTML = buttons.join('')
 
   try {
@@ -518,14 +524,21 @@ document.addEventListener('click', (e) => {
 
 function textHTML(txt) {
   let html = ''
+  const section = (title, kind, body) => {
+    const id = 'e' + Math.random().toString(36).slice(2)
+    pending[id] = () => editIndexText(state.preview, kind, body)
+    // A word, not a pen: the glyph is not on every font, and an empty box reads as a broken screen.
+    return '<h4>' + title + '<button class="pen" data-act="' + id + '" title="Править текст в поиске">править</button></h4>' +
+      '<pre>' + esc(body) + '</pre>'
+  }
   if (txt.description) {
-    html += '<h4>описание</h4><pre>' + esc(txt.description) + '</pre>'
+    html += section('описание', 'description', txt.description)
   }
   if (txt.audio) {
-    html += '<h4>расшифровка</h4><pre>' + esc(txt.audio) + '</pre>'
+    html += section('расшифровка', 'audio', txt.audio)
   }
   if (txt.text) {
-    html += '<h4>текст в поиске' + (txt.truncated ? ' (показан не весь)' : '') + '</h4><pre>' + esc(txt.text) + '</pre>'
+    html += section('текст в поиске' + (txt.truncated ? ' (показан не весь)' : ''), 'text', txt.text)
   }
   if (!html) {
     html = '<div class="hint" style="margin-top:14px;color:var(--dim);font-size:12.5px">' +
@@ -665,6 +678,184 @@ function startOptions() {
     localStorage.setItem('explorer.view', view)
     document.querySelectorAll('#view button').forEach((b) => b.classList.toggle('on', b.dataset.view === view))
   }
+}
+
+// ─── the modal: one door for every question the screen asks ──────────────
+
+let modalClose = null
+
+function openModal(title, bodyHTML, actions) {
+  $('modal-title').textContent = title
+  $('modal-body').innerHTML = bodyHTML
+  const foot = $('modal-foot')
+  foot.innerHTML = ''
+  for (const a of actions) {
+    const el = document.createElement('button')
+    el.className = 'btn ' + (a.kind || '')
+    el.textContent = a.label
+    el.onclick = () => a.onClick()
+    foot.appendChild(el)
+  }
+  $('modal').hidden = false
+  modalClose = () => { $('modal').hidden = true; $('modal-body').innerHTML = '' }
+  const first = $('modal-body').querySelector('input, textarea, select')
+  if (first) { first.focus(); if (first.select) first.select() }
+}
+
+function closeModal() {
+  if (modalClose) modalClose()
+  modalClose = null
+}
+
+$('modal-close').onclick = () => closeModal()
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('modal').hidden) closeModal()
+})
+
+// ─── the three actions of a file: rename, move, delete ──────────────────
+
+function renameDoc(doc) {
+  openModal('Переименовать', '<p>Новое имя файла в папке ' + esc(doc.folder) + '</p>' +
+    '<input id="f-name" value="' + esc(doc.name) + '" />', [
+    { label: 'Отмена', onClick: () => closeModal() },
+    { label: 'Переименовать', kind: 'primary', onClick: () => submitMove(doc, doc.folder, $('f-name').value) },
+  ])
+}
+
+function moveDoc(doc) {
+  const folders = collectionFolders()
+  const options = folders.map((f) =>
+    '<option value="' + esc(f) + '"' + (f === doc.folder ? ' selected' : '') + '>' + esc(f) + '</option>').join('')
+  openModal('Переместить', '<p>Куда положить ' + esc(doc.name) + '</p>' +
+    '<select id="f-folder">' + options + '</select>' +
+    '<p>Новое имя можно изменить здесь же.</p>' +
+    '<input id="f-name" value="' + esc(doc.name) + '" />', [
+    { label: 'Отмена', onClick: () => closeModal() },
+    { label: 'Переместить', kind: 'primary', onClick: () => submitMove(doc, $('f-folder').value, $('f-name').value) },
+  ])
+}
+
+// collectionFolders answers the folders a file of this collection may live in: the collection's own
+// roots and every folder the listing has shown, which is where a person wants to put a file.
+function collectionFolders() {
+  const out = new Set()
+  const bucket = state.collections.find((b) => b.id === state.bucket)
+  for (const f of (bucket && bucket.folders) || []) out.add(f)
+  for (const d of state.files) if (d.folder) out.add(d.folder)
+  return [...out].sort((a, b) => a.localeCompare(b, 'ru'))
+}
+
+async function submitMove(doc, folder, name) {
+  closeModal()
+  progress(true)
+  try {
+    const res = await post('api/move', { bucket: doc.bucket, doc: doc.key, folder, name })
+    toast(doc.name + ': ' + (res.moved ? 'перемещён' : 'имя не изменилось'), 'good')
+    if (res.moved) await scanQuiet()
+    state.selected = null
+    closePreview()
+    await reload()
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+function deleteDoc(doc) {
+  openModal('Удалить файл', '<p>Файл будет удалён с диска, а документ — из поиска. Это не отмена.</p>' +
+    '<p style="color:var(--text)"><b>' + esc(doc.name) + '</b><br />' + esc(doc.folder) + '</p>', [
+    { label: 'Отмена', onClick: () => closeModal() },
+    { label: 'Удалить', kind: 'danger', onClick: () => submitDelete(doc) },
+  ])
+}
+
+async function submitDelete(doc) {
+  closeModal()
+  progress(true)
+  try {
+    await post('api/delete', { bucket: doc.bucket, doc: doc.key })
+    toast(doc.name + ': удалён', 'good')
+    state.selected = null
+    state.picked.delete(doc.key)
+    closePreview()
+    await reload()
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+// ─── editing: the text the search holds, and the file itself ─────────────
+
+function editIndexText(doc, kind, current) {
+  const titles = { text: 'Текст в поиске', description: 'Описание', audio: 'Расшифровка' }
+  openModal('Править: ' + (titles[kind] || kind), '<p>' + esc(doc.name) + '</p>' +
+    '<textarea id="f-text">' + esc(current) + '</textarea>' +
+    '<p>Эти слова будет находить поиск. Сам файл не меняется.</p>', [
+    { label: 'Отмена', onClick: () => closeModal() },
+    { label: 'Сохранить', kind: 'primary', onClick: () => submitText(doc, kind, $('f-text').value) },
+  ])
+}
+
+async function submitText(doc, kind, text) {
+  closeModal()
+  progress(true)
+  try {
+    await post('api/save', { bucket: doc.bucket, doc: doc.key, kind, text })
+    toast(doc.name + ': сохранено', 'good')
+    await reload()
+    const again = state.files.find((d) => d.key === doc.key)
+    if (again) openPreview(again)
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+// editFile opens the file itself: a markdown note, a text file, a draft. The window edits the index
+// text the same way; this one writes the file, because a file manager is expected to.
+async function editFile(doc) {
+  progress(true)
+  try {
+    const raw = await api('api/raw?bucket=' + encodeURIComponent(doc.bucket) + '&doc=' + encodeURIComponent(doc.key))
+    openModal('Править файл: ' + doc.name, '<textarea id="f-text">' + esc(raw.text) + '</textarea>' +
+      '<p>Сохраняется в файл ' + esc(doc.path || doc.name) + ' и переиндексируется.</p>', [
+      { label: 'Отмена', onClick: () => closeModal() },
+      { label: 'Сохранить', kind: 'primary', onClick: () => submitFile(doc, $('f-text').value) },
+    ])
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+async function submitFile(doc, text) {
+  closeModal()
+  progress(true)
+  try {
+    await post('api/save', { bucket: doc.bucket, doc: doc.key, kind: 'file', text })
+    toast(doc.name + ': файл сохранён', 'good')
+    await scanQuiet()
+    await reload()
+    const again = state.files.find((d) => d.key === doc.key)
+    if (again) openPreview(again)
+  } catch (e) {
+    toast(e.message, 'bad')
+  } finally {
+    progress(false)
+  }
+}
+
+// scanQuiet indexes the new and changed files without a question: the person already said what he
+// wants by moving or saving a file.
+async function scanQuiet() {
+  try {
+    await post('api/scan', { bucket: state.bucket, mode: 'changed' })
+  } catch (e) { /* the answer of the move is what matters; a failed scan shows on the next refresh */ }
 }
 
 // ─── selection and group actions ────────────────────────────────────────

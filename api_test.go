@@ -71,8 +71,10 @@ func fakeInstall(t *testing.T, allowWrite *bool) *httptest.Server {
 			result = DocText{Doc: "docs/note.md", Name: "note.md", Kind: "text", Text: "привет из индекса", HasText: true}
 		case "media.link":
 			result = map[string]any{"url": "https://relay.example.com/s/abc/api/thumb?mt=tok123", "expires_in": 600}
-		case "doc.delete", "doc.restore", "doc.describe", "bucket.scan":
+		case "doc.delete", "doc.restore", "doc.describe", "bucket.scan", "doc.save_text", "doc.save_raw":
 			result = map[string]any{"ok": true, "scanned": 2, "ingested": 1}
+		case "file.move":
+			result = map[string]any{"ok": true, "moved": true, "path": "/data/docs/новое.md"}
 		default:
 			http.Error(w, "unknown command "+req.Command, http.StatusBadRequest)
 			return
@@ -282,5 +284,48 @@ func TestUploadGoesThroughTheInstallation(t *testing.T) {
 	a.routes().ServeHTTP(rec, req)
 	if !strings.Contains(rec.Body.String(), "заметка.md") {
 		t.Errorf("the file was not added: %s", rec.Body.String())
+	}
+}
+
+// TestTheThreeActionsOfAFile: rename, move and delete are one request each, and each one is refused to
+// a person who may not write.
+func TestTheThreeActionsOfAFile(t *testing.T) {
+	a, done := newTestApp(t)
+	defer done()
+	post := func(path, body string, rights string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		if rights != "" {
+			req.Header.Set("X-AnyText-Rights", rights)
+		}
+		rec := httptest.NewRecorder()
+		a.routes().ServeHTTP(rec, req)
+		return rec
+	}
+
+	moved := post("/api/move", `{"bucket":"docs","doc":"docs/note.md","folder":"/data/docs","name":"новое.md"}`, "")
+	if !strings.Contains(moved.Body.String(), `"moved":true`) {
+		t.Errorf("move answered %s", moved.Body.String())
+	}
+	if rec := post("/api/delete", `{"bucket":"docs","doc":"docs/note.md"}`, ""); rec.Code != http.StatusOK {
+		t.Errorf("delete answered %d", rec.Code)
+	}
+	if rec := post("/api/save", `{"bucket":"docs","doc":"docs/note.md","kind":"text","text":"правка"}`, ""); rec.Code != http.StatusOK {
+		t.Errorf("save answered %d", rec.Code)
+	}
+	for _, path := range []string{"/api/move", "/api/delete", "/api/save"} {
+		body := `{"bucket":"docs","doc":"docs/note.md","kind":"text","text":"x","name":"y"}`
+		if rec := post(path, body, "read"); rec.Code != http.StatusForbidden {
+			t.Errorf("%s was allowed to a reader: %d", path, rec.Code)
+		}
+	}
+}
+
+// TestRawIsTheFileItself: the editor shows what is on the disk, not what the index holds.
+func TestRawIsTheFileItself(t *testing.T) {
+	a, done := newTestApp(t)
+	defer done()
+	_, body := get(t, a.routes(), "/api/raw?bucket=docs&doc=docs/note.md", nil)
+	if !strings.Contains(body, "bytes of docs/note.md") {
+		t.Errorf("raw answered %s", body)
 	}
 }

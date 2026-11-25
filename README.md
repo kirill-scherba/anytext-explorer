@@ -80,8 +80,9 @@ The window shows it under the puzzle button; through the relay it is at
   by name;
 - **middle**: the files — list or grid with thumbnails, sorted by name, date, size or state; a picture
   is shown as a picture;
-- **right**: the preview — the picture, what the file is, and the text the index holds; with the
-  actions: open, download, exclude from the search or put it back, describe a picture with the model.
+- **right**: the preview — the picture, what the file is, and the text the index holds. The actions:
+  open, download, edit the file (a text file) or the words the search holds, exclude from the search or
+  put it back, describe a picture with the model, **rename**, **move**, **delete**.
 
 **Group actions.** A checkbox in every row, Shift for a range, and a checkbox in the toolbar that takes
 everything in the current filter. With a selection the bar appears: *Скачать zip*, *Описать моделью*,
@@ -116,6 +117,10 @@ that file — which is also how a person shares what he found.
 | `POST /api/bulk` | one action over many documents: `exclude`, `restore`, `describe` |
 | `POST /api/zip` | the chosen documents as one archive (a name clash becomes `note (2).md`) |
 | `POST /api/upload?bucket=` | multipart files, forwarded to the installation's `/api/upload` |
+| `GET /api/raw?bucket=&doc=` | the text of a text file as it is on the disk (the editor shows the file, not the index) |
+| `POST /api/save` | `kind: file` writes the file (`doc.save_raw`), any other kind corrects the words the search holds (`doc.save_text`) |
+| `POST /api/move` | rename and move as one wish (`file.move`): the target must be a folder of the collection |
+| `POST /api/delete` | the document and the file (`doc.delete` with `delete_file`) |
 | `GET /health` | the supervisor's question |
 
 Every request carries the person's account token to `/api/command`: the installation decides what that
@@ -123,8 +128,6 @@ person may do, and the screen only hides the buttons that would be refused.
 
 ## What it does not do yet
 
-- **no rename, move or delete of a file**: those need commands the installation does not have. The
-  module deliberately has no files of its own, so it cannot do them behind the installation's back;
 - **the whole collection is read at once** (`doc.list` with a high limit). A collection of two hundred
   thousand files answers slowly; a folder-scoped listing in the installation would fix it for the
   screen, `/docs` and the agent at once.
