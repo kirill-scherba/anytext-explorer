@@ -73,6 +73,9 @@ type app struct {
 	// cursor forgets it.
 	indexKey string
 
+	// trace is the file that says what the program was doing when the screen stopped: see trace.go.
+	trace *tracer
+
 	tui     *tview.Application
 	pages   *tview.Pages
 	header  *tview.TextView
@@ -145,6 +148,11 @@ func (a *app) setup(screen tcell.Screen) {
 	a.pages = tview.NewPages().AddPage("main", root, true, true)
 	a.tui.SetRoot(a.pages, true)
 	a.tui.SetInputCapture(a.onKey)
+	// Every draw is a line: a frozen screen with keys in the trace and no draw after them means the
+	// program is stuck in rendering; no keys at all means the input never came (trace.go).
+	a.tui.SetAfterDrawFunc(func(tcell.Screen) {
+		a.trace.line("draw")
+	})
 	go a.previewWorker()
 }
 
@@ -420,7 +428,10 @@ func (a *app) refreshIndex() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
+		a.trace.line("doc.list start %s", dir)
+		start := time.Now()
 		list, err := a.inst.Docs(ctx, bucketID, dir, 5000)
+		a.trace.line("doc.list done %s in %v err=%v", dir, time.Since(start).Round(time.Millisecond), err != nil)
 		a.tui.QueueUpdateDraw(func() {
 			if seq != a.indexSeq {
 				return
@@ -515,7 +526,9 @@ func (a *app) previewWorker() {
 		if job == nil {
 			continue
 		}
+		start := time.Now()
 		text := a.renderWithTimeout(job)
+		a.trace.line("preview %s in %v", job.entry.Name, time.Since(start).Round(time.Millisecond))
 		a.tui.QueueUpdateDraw(func() {
 			if job.seq != a.previewSeq {
 				return
@@ -819,6 +832,7 @@ func (a *app) modal(question string, yes func()) {
 // onKey is the whole keyboard of the explorer. Keys it does not use go to the widget that has the
 // focus: the list moves with the arrows by itself, and the preview scrolls by itself.
 func (a *app) onKey(ev *tcell.EventKey) *tcell.EventKey {
+	a.trace.line("key %v", ev.Key())
 	if a.pages.HasPage("confirm") {
 		return ev
 	}

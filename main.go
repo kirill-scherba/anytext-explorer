@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,6 +28,7 @@ func main() {
 	install := flag.String("install", "", "installation address (default: ANYTEXT_SELF or http://127.0.0.1:7787)")
 	lang := flag.String("lang", "", "interface language: ru or en (default: from the environment)")
 	dir := flag.String("dir", "", "folder to open (default: the current folder)")
+	tracePath := flag.String("trace", "", "write a trace of keys and frames to this file (default: the cache folder)")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -53,7 +55,16 @@ func main() {
 		folder = wd
 	}
 
+	path := strings.TrimSpace(*tracePath)
+	if path == "" {
+		if cache, err := os.UserCacheDir(); err == nil {
+			path = filepath.Join(cache, "anytext-explorer", "trace.log")
+		}
+	}
+
 	a := newApp(newInstall(base), detectLang(*lang), folder)
+	a.trace = openTrace(path)
+	defer a.trace.close()
 	if err := a.run(); err != nil {
 		// A screen is the only way this program talks: when it cannot have one, it says so in one
 		// line instead of a stack of escapes on a pipe.

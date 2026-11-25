@@ -106,6 +106,25 @@ when the text lives in the index (a PDF, a picture, a recording).
   A module would be the answer for remote Windows users, and that is what the next decision is about.
 - No mouse: the keys are the interface.
 
+## When the screen stops
+
+A terminal program cannot tell a person whether it is stuck or has stopped hearing the keyboard: a
+frame that is never drawn and a key that never arrives look the same. The explorer writes a trace of
+both to `~/.cache/anytext-explorer/trace.log` (rewritten on every start, `-trace <path>` to move it):
+
+```
+   0.997 key 258        ← the key arrived
+   1.022 draw           ← and the screen answered
+   1.081 preview t2.txt in 0s
+```
+
+Reading it after a freeze:
+
+- **keys with no draw after them** — the program is stuck in rendering;
+- **no keys at all while the person was pressing** — the input never reached the program: the
+  terminal's transport, not the explorer;
+- **`doc.list start` with no `done`** — the installation is thinking, and the list is waiting for it.
+
 ## Tests
 
 ```bash

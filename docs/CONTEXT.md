@@ -39,6 +39,12 @@ terminal it is started in, so it builds for linux, darwin and windows alike. Rea
 installation is a different matter, and that is the window's terminal, which exists on linux and
 darwin only.
 
+**25.11.2026 — the trace.** Three rounds of a frozen screen were spent on guesses, and the guess
+that mattered was outside the program: the window that was freezing was the one served by the site,
+and the site's client was the build of 24.11 - every fix lived in the local window only. The lesson is
+written into the code: `trace.go` records keys, frames and the duration of every preview, so the next
+freeze answers "program or transport" from a file instead of from a conversation.
+
 ## Open questions
 
 - **Language of the file names and of the wording.** The screen speaks Russian and English (`-lang`,
