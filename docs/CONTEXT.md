@@ -3,57 +3,62 @@
 The state of the project and the decisions behind it. Newest on top; history is appended, not
 rewritten.
 
-## 25.11.2026 — the first slice
+## 25.11.2026 — the module, and the end of the terminal version
 
-**The decision.** A file explorer is made as a terminal program, not as a module. The reasons, in the
-order they weighed:
+**The decision.** The explorer is a module with a browser screen. The terminal version was dropped the
+same day it was first used, for three reasons, in the order they weighed:
 
-1. The module catalogue does not exist yet (`docs/MODULES.md`, "How a module is added"): a module
-   today is a binary a person installs by hand through `/api/command`. A feature that needs that is a
-   feature nobody has.
-2. The terminal already carries the transport (fetch with the account token, polling), the identity
-   and the audit. A module would rebuild the relay path, the `srcdoc` frame and the single-file page
-   for the same result.
-3. Inside the terminal the program has the trust a shell already has, so file operations need no new
-   commands in the installation.
-4. Two thirds of the code (tree, keys, index states, wording) moves into a module unchanged if the
-   decision is reversed.
+1. A terminal cannot show a picture, and a file manager is mostly pictures. Kirill, after an hour:
+   "TUI всё же не красивый и неудобный".
+2. The frames froze at random, and the fault was never in the explorer: the trace proved a frame drawn
+   by the program and never delivered by the terminal's transport. A file manager must not depend on a
+   transport being fixed first.
+3. A program in `PATH` is not a product: a module is installed by the installation's own registry,
+   shown under the puzzle button and reached through the relay like any other screen.
 
-**What was built.** One binary, `anytext-explorer`: a two-pane screen with the folder's files, the
-state of each file in the search, a preview and the actions of the index. Files come from the disk;
-`doc.list`, `doc.text`, `doc.delete`, `doc.restore`, `doc.describe` and `bucket.scan` come from the
-installation at `ANYTEXT_SELF` or `127.0.0.1:7787`.
+**What was built.** `anytext-explorer` 0.2.0, module id `explorer`, port 7870: one binary, one
+self-contained page, no Go dependencies. Left — collections, the filter by state with counts, folders,
+search; middle — the files in a list or a grid with thumbnails; right — the preview with the picture,
+the text the index holds, and the actions (open, download, exclude/restore, describe).
 
-**Checked against the live installation** (25.11.2026, collection `todo`, 40 files in the search):
-the folder is listed with its states, the header counts match `doc.list`, the preview reads a text
-file from the disk, `F3` reads the indexed text of a document.
+**What it is built on.** The gallery's two lessons: the page is one document served inline (a `<link>`
+in a relayed frame carries no token), and pictures come from the installation's `/api/thumb` and
+`/api/file` with a media permit in the address, because a browser cannot put a header on an `<img src>`.
+The permit is asked once and kept for ten minutes; a picture that comes back 401 asks for a new one.
 
-**How the screen is tested.** A terminal interface has no screenshot, so tcell's simulation screen
-draws the real layout and the test reads the cells back as text (`ui_test.go`,
-`TestDumpScreen` with `DUMP=1`). This caught three real defects at once: the cursor landed on "наверх"
-instead of the first file, the header was cut in the middle of the path, and the rule of the preview
-wrapped onto a second line on a narrow pane.
+**What the module insists on.** It has no files of its own: every listing, every text and every action
+goes through `/api/command` with the person's account token, so the installation decides what that
+person may do. The screen hides the buttons a reader would be refused, and the refusal itself comes
+from the same place (test: `TestAReaderMayNotChangeAndIsToldSo`).
 
-**Checked on every platform.** The program has no dependency on a pseudo-terminal: it draws on the
-terminal it is started in, so it builds for linux, darwin and windows alike. Reaching a *remote*
-installation is a different matter, and that is the window's terminal, which exists on linux and
-darwin only.
+**Checked on the live installation** (25.11.2026): 7 collections, `todo` with 41 files and its counts;
+the preview of a picture with the OCR text the index holds; the same page at `/api/module/explorer/ui/`
+through the installation's proxy; screenshots of both themes and both views.
 
-**25.11.2026 — the trace.** Three rounds of a frozen screen were spent on guesses, and the guess
-that mattered was outside the program: the window that was freezing was the one served by the site,
-and the site's client was the build of 24.11 - every fix lived in the local window only. The lesson is
-written into the code: `trace.go` records keys, frames and the duration of every preview, so the next
-freeze answers "program or transport" from a file instead of from a conversation.
+## What is next
 
-## Open questions
+- **Upload** from the screen: it belongs to the window's "+" for now, and a second way to put a file
+  into a collection is a second set of rules about where it lands.
+- **Rename, move, delete**: they need commands the installation does not have. The module has no files
+  of its own on purpose.
+- **`doc.list` scoped to a folder**: the whole collection is read at once today. One command in the
+  installation would make this screen, `/docs` and the agent faster together.
+- **The registry catalogue** (`docs/MODULES.md`, "How a module is added"): until it exists, installing a
+  module is a `modules.install` by hand.
 
-- **Language of the file names and of the wording.** The screen speaks Russian and English (`-lang`,
-  otherwise the locale); the state words come from the interface, the reason codes from the scan.
-- **`doc.list` walks the whole collection** on every call, so a folder of a 200 000-file collection is
-  slow to open. A folder-scoped listing in the installation would fix it for the explorer, `/docs` and
-  the agent at once; until then the explorer passes the folder as the `query` filter.
-- **File operations** (rename, copy, move, delete a file, mkdir) are the next slice. They touch the
-  disk directly, which is legitimate inside the terminal, and they need confirmations rather than
-  permissions: the shell already permits everything.
-- **The Windows question.** No terminal there, so no explorer. If that becomes the complaint that
-  matters, a module is written on the same code.
+## The terminal version (25.11.2026, dropped)
+
+Kept here because the reasons matter, not the code — the code is in the history.
+
+It was a tcell/tview program run inside the window's terminal: two panes, the state of every file in
+the search, a preview of the local file. It worked and was checked against the live installation, and
+its test read the drawn screen back as text. Two things ended it: a file manager without pictures, and
+a transport whose frozen request took the screen with it.
+
+What the exercise proved and is worth remembering:
+
+- the trace file (`~/.cache/anytext-explorer/trace.log`) answers the question a frozen terminal cannot:
+  keys without frames is the program, no keys at all is the transport;
+- the terminal's poll had no timeout: a request the relay dropped silently was waited on for minutes,
+  and the input queue sent one POST per keystroke, which is a queue of overtaking requests for a person
+  holding an arrow key. Both are fixed in `anytext-gui` today and matter for `vim` and `mc` there.

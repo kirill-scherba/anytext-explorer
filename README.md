@@ -1,136 +1,130 @@
-# anytext-explorer — the files of an installation, in a terminal
+# anytext-explorer — the files of an installation, in a browser
 
-A file manager drawn in a terminal, for the machine where an AnyText installation runs. It shows the
-files of a folder with one thing a file manager usually does not have: **what the search holds of each
-file** — in the search, skipped and why, excluded, not scanned yet — and the text that was taken from
-it.
+The collections of an AnyText installation with the state of every file in the search — in the search,
+skipped and why, excluded, not scanned yet — and a preview that shows a picture, the description a
+model wrote, or the text the index holds.
+
+It is a module: a separate process with its own HTTP server on loopback, started and proxied by the
+installation at `/api/module/explorer/`. Nothing of it is compiled into AnyText, and the screen reaches
+a remote computer through the relay exactly like the window's own pages.
 
 ```
-person ──► the window's terminal (docs/TERMINAL.md) ──► anytext-explorer
-                                                          │
-                                              the disk ───┘  files, sizes, dates
-                                              the installation /api/command:
-                                                              doc.list, doc.text,
-                                                              doc.delete, doc.restore,
-                                                              doc.describe, bucket.scan
+person ──► the window or the relay ──► AnyText (proxy /api/module/explorer/)
+                                          │
+                                          └──► anytext-explorer :7870
+                                                 │  /api/command: doc.list, doc.text,
+                                                 │  doc.delete, doc.restore, doc.describe, bucket.scan
+                                                 └  media.link: the permit for pictures
 ```
 
-## Why a terminal program and not a module
+## Why a module and not a program in the terminal
 
-Written down on 25.11.2026, when the choice was made.
+The first version was a full-screen program for the window's terminal (`docs/TERMINAL.md` in
+anytext-gui): cheap to build, no distribution, works inside a НУУ container. It was dropped on
+25.11.2026, after a day of use:
 
-A module is a process with its own HTTP server, its own port and a single-file page drawn in an
-iframe through the relay (`docs/MODULES.md`). For a file manager that is a lot of scaffolding for a
-screen: the terminal already carries the transport (fetch with the account token, polling), the
-identity and the audit, and the module catalogue does not exist yet — so a module would be a feature
-nobody can install.
+- **it is not pretty and not convenient.** A terminal cannot show a picture, and a file manager is
+  mostly pictures;
+- **the frames froze at random** and the reason was never in the explorer: a request of the terminal's
+  transport sat unanswered, and the screen stopped while the program kept working. Fixing a transport
+  is not the explorer's business;
+- **it was a program nobody could install.** A module is installed by the installation's own registry;
+  a terminal program has to be in `PATH` of the machine.
 
-The terminal program needs none of it: it is one binary, it runs where the installation lives, and
-inside the terminal it has exactly the trust the shell already has. It is a first slice, not the last
-word: if it turns out that Windows users and phones need the same screen, a module will be written on
-top of the same half of the code (tree, keys, index states).
+The code of that version is in the history (`git log --all`), and the trace file it left
+(`~/.cache/anytext-explorer/trace.log`) is what proved the transport was at fault.
 
 ## What it needs
 
-- An AnyText installation on the same machine — the desktop application, or a НУУ container.
-- Its address: `ANYTEXT_SELF` from the terminal's environment, `-install`, or `127.0.0.1:7787`.
-- No module registry entry, no port, no MCP server, no token. The terminal right (`terminal`) and the
-  switch in the settings are what let a person in (`docs/TERMINAL.md`).
+- AnyText 0.4.18 or newer: the module gets `ANYTEXT_SELF`, the person's rights, and the account token
+  of the frame.
+- Nothing else: no second database, no MCP server, no files of its own. The files are the
+  installation's, read through `/api/command`; pictures and downloads come from its `/api/thumb` and
+  `/api/file` with the media permit.
 
-## Build and run
+## Build and install
 
 ```bash
 CGO_ENABLED=0 go build -o ~/.local/bin/anytext-explorer .
-anytext-explorer                 # the current folder
-anytext-explorer -dir ~/Documents/todo
-anytext-explorer -lang en        # the screen speaks Russian by default
+
+curl -s -X POST http://127.0.0.1:7787/api/command -H 'Content-Type: application/json' -d '{
+  "command":"modules.install",
+  "args":{"id":"explorer","name":"Проводник","names":{"ru":"Проводник","en":"Files"},
+          "version":"0.2.0","addr":"127.0.0.1:7870",
+          "command":["'"$HOME"'/.local/bin/anytext-explorer","-addr","127.0.0.1:7870"],
+          "auto_start":true,"enabled":true}}'
+
+curl -s http://127.0.0.1:7787/api/module/explorer/health      # {"status":"ok"}
+curl -s http://127.0.0.1:7787/api/module/explorer/ui/          # the screen
 ```
 
-The window's own terminal opens at the home folder of the installation; `anytext-explorer` there is
-the whole path to the screen.
+The window shows it under the puzzle button; through the relay it is at
+`https://anytext.teonet.app/s/<id>/api/module/explorer/ui/`.
 
 ## The screen
 
 ```
- anytext explorer  /home/kirill/Documents/todo
- коллекция: todo   ● 40 в поиске ○ 1 пропущено ⊘ 0 убрано · 0 не скан.
-╔ файлы ══════════════════════════════════╗┌ просмотр ─────────────────────────┐
-║  размер имя                             ║│заметка.md                         │
-║         ..                              ║│md · 99 Б · изменён 25.11.26 08:01 │
-║         Заметки/                        ║│состояние: в поиске                │
-║●   99 Б заметка.md                      ║│───────────────────────────────────│
-║○    4 Б запись.opus                     ║│# Заметка                          │
-║·   39 Б отчёт-за-октябрь.md             ║│                                   │
-║⊘    6 Б старый-файл.xls                 ║│Это текст, который видно в файле.  │
-╚═════════════════════════════════════════╝└───────────────────────────────────┘
- Enter открыть · BkSp вверх · Tab панель · F3 текст из индекса · F5 обновить
- F7 просканировать · F8 убрать из поиска / вернуть · F9 описать моделью · q выход
+┌ AnyText Explorer  [todo]                          Обновить  Просканировать ┐
+│ поиск…        │ 41 из 41 файлов            имя дата размер состояние  вид  │
+│ КОЛЛЕКЦИИ     │ ● в поиске  «В эту папку писать нельзя».md   51 Б  14.11.26 │
+│  todo         │ ● в поиске  запрос теплогенератор.pdf       938 КБ 20.11.26 │
+│  Галерея      │ ○ пропущено T3_01.11.2026.doc · формат не…  220 КБ 20.11.26 │
+│ СОСТОЯНИЕ     │                                                            │
+│  ● в поиске 40│                                                            │
+│  ○ пропущено 1│                                                            │
+│ ПАПКИ         │                                                            │
+└───────────────┴────────────────────────────────────────────────────────────┘
 ```
 
-The marks of the state column, and the same marks with their counts in the header:
+- **left**: collections, the filter by state (with counts), the folders of the collection, and a search
+  by name;
+- **middle**: the files — list or grid with thumbnails, sorted by name, date, size or state; a picture
+  is shown as a picture;
+- **right**: the preview — the picture, what the file is, and the text the index holds; with the
+  actions: open, download, exclude from the search or put it back, describe a picture with the model.
 
 | Mark | State | What it means |
 |---|---|---|
-| `●` | в поиске | the search finds it: text, description or transcript is in the index |
-| `○` | пропущено | the scan looked at it and took nothing; the preview says why |
-| `⊘` | убрано вами | excluded by a person; the file is where it is |
-| `·` | не сканировалось | no scan has reached it yet |
-| `·` grey | outside collections | the installation knows nothing about this file |
+| `●` green | в поиске | the search finds it: text, description or transcript is in the index |
+| `○` amber | пропущено | the scan looked at it and took nothing; the reason is next to the name |
+| `⊘` red | убрано вами | excluded by a person; the file is where it is |
+| `·` grey | не сканировано | no scan has reached it yet |
 
-The pane is a glance: the file itself when it is text, and the line "текст есть только в индексе: F3"
-when the text lives in the index (a PDF, a picture, a recording).
+The address understands two choices: `?theme=dark|light` and `?view=list|grid`, and `?doc=<key>` opens
+that file — which is also how a person shares what he found.
 
-## Keys
+## The API of the screen
 
-| Key | What it does |
+| Request | What it does |
 |---|---|
-| `Enter` | enter a folder; on a file — show the text the search holds (F3) |
-| `↑` `↓`, `PgUp` `PgDn`, `Home` `End` | move in the list |
-| `BkSp`, `Esc` | up to the parent folder; from the text pane — back to the list |
-| `Tab` | the keyboard between the list and the text; arrows then scroll the text |
-| `F3` | the text from the index: what the search holds, with the description and the transcript |
-| `F5` | re-read the folder and the index state |
-| `F7` | scan the collection: new and changed files only (asks first) |
-| `F8` | exclude from the search / put back |
-| `F9` | describe a picture with the vision model |
-| `q`, `Ctrl+C` | quit |
+| `GET /api/state` | the collections, the permit for pictures, who is looking and what that person may do |
+| `GET /api/files?bucket=` | every file of one collection with its state — one request, then the screen walks the tree it holds |
+| `GET /api/text?bucket=&doc=` | the text the search holds: extracted text, description, transcript |
+| `GET /api/signed?bucket=&doc=` | a fresh permit for pictures (asked when a picture comes back 401) |
+| `POST /api/scan` | index the new and changed files of a collection |
+| `POST /api/exclude` / `POST /api/restore` | out of the search / back into it |
+| `POST /api/describe` | describe a picture with the vision model |
+| `GET /health` | the supervisor's question |
+
+Every request carries the person's account token to `/api/command`: the installation decides what that
+person may do, and the screen only hides the buttons that would be refused.
 
 ## What it does not do yet
 
-- No file operations: rename, copy, move, delete a file. The next slice; inside the terminal the disk
-  is reachable, so those are a decision about keys and confirmations, not about the installation.
-- No pictures: a terminal shows text. The address of a file in the browser is `/api/file`, and the
-  explorer does not open browsers.
-- Windows: the program builds and runs there in an ordinary console, but the window has no terminal
-  (`creack/pty` has no Windows support), so there is no way to reach a remote installation through it.
-  A module would be the answer for remote Windows users, and that is what the next decision is about.
-- No mouse: the keys are the interface.
-
-## When the screen stops
-
-A terminal program cannot tell a person whether it is stuck or has stopped hearing the keyboard: a
-frame that is never drawn and a key that never arrives look the same. The explorer writes a trace of
-both to `~/.cache/anytext-explorer/trace.log` (rewritten on every start, `-trace <path>` to move it):
-
-```
-   0.997 key 258        ← the key arrived
-   1.022 draw           ← and the screen answered
-   1.081 preview t2.txt in 0s
-```
-
-Reading it after a freeze:
-
-- **keys with no draw after them** — the program is stuck in rendering;
-- **no keys at all while the person was pressing** — the input never reached the program: the
-  terminal's transport, not the explorer;
-- **`doc.list start` with no `done`** — the installation is thinking, and the list is waiting for it.
+- **no upload**: adding a file is the window's own "+" button, and a second way to put a file into a
+  collection is a second set of rules about where it lands;
+- **no rename, move or delete of a file**: those need commands the installation does not have. The
+  module deliberately has no files of its own, so it cannot do them behind the installation's back;
+- **the whole collection is read at once** (`doc.list` with a high limit). A collection of two hundred
+  thousand files answers slowly; a folder-scoped listing in the installation would fix it for the
+  screen, `/docs` and the agent at once.
 
 ## Tests
 
 ```bash
-go test ./...                        # the screen is drawn on a simulation screen and read back
-DUMP=1 go test -run TestDumpScreen -v  # look at the layout as text, without a terminal
+go test ./...
 ```
 
-The first test reads the cells of the drawn screen and checks that the files, the states and the
-preview are there — a terminal interface cannot be checked by a screenshot, but it can be read.
+The tests use a fake installation and check the three rules that broke before: the page is one
+self-contained document, its base follows the mount, and a reader is neither shown nor given the right
+to change documents.

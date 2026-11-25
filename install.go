@@ -12,27 +12,26 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Install is the AnyText installation this explorer works with.
-//
-// The files are read from the local disk: inside the terminal that is the same trust boundary the
-// shell already has (docs/TERMINAL.md). The installation is asked only what the disk cannot say -
-// whether a file is in the search, why another one was skipped, what text was taken from it.
+// Install is the AnyText installation this module works for. Everything the screen shows comes from
+// here: the collections, the files and their state, the text the search holds of them.
 type Install struct {
 	base   string
 	client *http.Client
 }
 
-// newInstall answers a client for the installation at base (http://127.0.0.1:7787 by default).
+// newInstall answers a client for the installation at base.
 func newInstall(base string) *Install {
 	return &Install{
 		base: strings.TrimRight(strings.TrimSpace(base), "/"),
-		// A collection of two hundred thousand files answers doc.list slowly, and a scan answers
-		// when it is done: a short timeout would report a working installation as dead.
-		client: &http.Client{Timeout: 5 * time.Minute},
+		// A collection of two hundred thousand files answers doc.list slowly, and a scan answers when
+		// it is done: a short timeout would report a working installation as dead.
+		client: &http.Client{Timeout: 10 * time.Minute},
 	}
 }
 
@@ -54,13 +53,13 @@ type Doc struct {
 	Folder         string `json:"folder"`
 	Kind           string `json:"kind"`
 	State          string `json:"state"`
-	Reason         string `json:"reason"`
-	Size           int64  `json:"size"`
-	ModTime        string `json:"mod_time"`
-	Description    string `json:"description"`
-	HasText        bool   `json:"has_text"`
-	HasDescription bool   `json:"has_description"`
-	HasAudio       bool   `json:"has_audio"`
+	Reason         string `json:"reason,omitempty"`
+	Size           int64  `json:"size,omitempty"`
+	ModTime        string `json:"mod_time,omitempty"`
+	Description    string `json:"description,omitempty"`
+	HasText        bool   `json:"has_text,omitempty"`
+	HasDescription bool   `json:"has_description,omitempty"`
+	HasAudio       bool   `json:"has_audio,omitempty"`
 }
 
 // DocList is the answer of doc.list.
@@ -84,20 +83,24 @@ type DocText struct {
 	HasAudio       bool   `json:"has_audio"`
 	Truncated      bool   `json:"truncated"`
 	Edited         bool   `json:"edited"`
-	Chunks         int    `json:"chunks"`
+	File           string `json:"file"`
+	Folder         string `json:"folder"`
 }
 
 // Document states, as doc.list names them.
 const (
-	stateIndexed   = "indexed"
-	stateSkipped   = "skipped"
-	stateExcluded  = "excluded"
-	stateUnscanned = "unscanned"
+	StateIndexed   = "indexed"
+	StateSkipped   = "skipped"
+	StateExcluded  = "excluded"
+	StateUnscanned = "unscanned"
 )
 
-// command posts one command and decodes its result into out. A command that the installation
-// refuses with an explanation in words comes back as an error with those words.
-func (in *Install) command(ctx context.Context, cmd string, args map[string]any, out any) error {
+// command posts one command on behalf of a person and decodes its result into out.
+//
+// The person's account token travels with the request: the installation decides what that person may
+// do, and a module that dropped the token would work as the owner for everybody
+// (docs/MODULES.md, "What a module sees").
+func (in *Install) command(ctx context.Context, token, cmd string, args map[string]any, out any) error {
 	if args == nil {
 		args = map[string]any{}
 	}
@@ -110,13 +113,16 @@ func (in *Install) command(ctx context.Context, cmd string, args map[string]any,
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := in.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s: %w", in.base, err)
 	}
 	defer resp.Body.Close()
-	// Forty thousand characters of a document, times four buffers (text, description, audio,
-	// metadata): the answer to doc.text is large by design and must not be cut at a megabyte.
+	// Forty thousand characters of a document, times four buffers: the answer to doc.text is large by
+	// design and must not be cut at a megabyte.
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return err
@@ -134,102 +140,138 @@ func (in *Install) command(ctx context.Context, cmd string, args map[string]any,
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%s: %s", cmd, http.StatusText(resp.StatusCode))
 	}
-	if out == nil {
-		return nil
-	}
-	if len(answer.Result) == 0 || string(answer.Result) == "null" {
+	if out == nil || len(answer.Result) == 0 || string(answer.Result) == "null" {
 		return nil
 	}
 	return json.Unmarshal(answer.Result, out)
 }
 
-// WhoAmI checks that the installation answers at all.
-func (in *Install) WhoAmI(ctx context.Context) (string, error) {
-	var me struct {
-		Role  string   `json:"role"`
-		Email string   `json:"email"`
-		Perms []string `json:"perms"`
-	}
-	if err := in.command(ctx, "app.whoami", nil, &me); err != nil {
-		return "", err
-	}
-	if me.Role == "" {
-		return "owner", nil
-	}
-	return me.Role, nil
-}
-
-// Buckets lists the collections of the installation.
-func (in *Install) Buckets(ctx context.Context) ([]Bucket, error) {
+// Collections lists the collections of the installation.
+func (in *Install) Collections(ctx context.Context, token string) ([]Bucket, error) {
 	var out []Bucket
-	if err := in.command(ctx, "bucket.list", nil, &out); err != nil {
+	if err := in.command(ctx, token, "bucket.list", nil, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// Docs answers the files of one collection whose path contains query. An empty bucket means every
-// collection: the installation walks all of them, which is why the explorer asks about one folder
-// of one collection at a time.
-func (in *Install) Docs(ctx context.Context, bucket, query string, limit int) (*DocList, error) {
-	args := map[string]any{"query": query}
-	if bucket != "" {
-		args["bucket"] = bucket
-	}
-	if limit > 0 {
-		args["limit"] = limit
-	}
+// Files answers every file of one collection with its state. One request per collection: the screen
+// then walks the tree it already holds, and a click costs nothing.
+func (in *Install) Files(ctx context.Context, token, bucket string) (*DocList, error) {
 	var out DocList
-	if err := in.command(ctx, "doc.list", args, &out); err != nil {
+	if err := in.command(ctx, token, "doc.list", map[string]any{
+		"bucket": bucket, "limit": 200000,
+	}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-// Text answers what the search holds for one document: the extracted text, the description of a
-// picture, the transcript of a recording.
-func (in *Install) Text(ctx context.Context, bucket, key string) (*DocText, error) {
+// Text answers what the search holds for one document.
+func (in *Install) Text(ctx context.Context, token, bucket, doc string) (*DocText, error) {
 	var out DocText
-	if err := in.command(ctx, "doc.text", map[string]any{"bucket": bucket, "doc": key}, &out); err != nil {
+	if err := in.command(ctx, token, "doc.text", map[string]any{"bucket": bucket, "doc": doc}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
 // Exclude takes a document out of the search and keeps the file where it is.
-func (in *Install) Exclude(ctx context.Context, bucket, key string) error {
-	return in.command(ctx, "doc.delete", map[string]any{
-		"bucket": bucket, "doc": key, "delete_file": false,
+func (in *Install) Exclude(ctx context.Context, token, bucket, doc string) error {
+	return in.command(ctx, token, "doc.delete", map[string]any{
+		"bucket": bucket, "doc": doc, "delete_file": false,
 	}, nil)
 }
 
 // Restore puts an excluded document back into the search.
-func (in *Install) Restore(ctx context.Context, bucket, key string) error {
-	return in.command(ctx, "doc.restore", map[string]any{"bucket": bucket, "doc": key}, nil)
+func (in *Install) Restore(ctx context.Context, token, bucket, doc string) error {
+	return in.command(ctx, token, "doc.restore", map[string]any{"bucket": bucket, "doc": doc}, nil)
 }
 
 // Describe asks the vision model what a picture shows.
-func (in *Install) Describe(ctx context.Context, bucket, key string) (string, error) {
+func (in *Install) Describe(ctx context.Context, token, bucket, doc string) (string, error) {
 	var out struct {
 		Text string `json:"text"`
 	}
-	if err := in.command(ctx, "doc.describe", map[string]any{"bucket": bucket, "doc": key}, &out); err != nil {
+	if err := in.command(ctx, token, "doc.describe", map[string]any{"bucket": bucket, "doc": doc}, &out); err != nil {
 		return "", err
 	}
 	return out.Text, nil
 }
 
-// Scan brings the collection's index up to date with the folders. "changed" reads only what the
-// scan has not seen or what has been rewritten since; "all" rebuilds the collection.
-func (in *Install) Scan(ctx context.Context, bucket, mode string) (map[string]any, error) {
+// Scan brings the collection's index up to date. "changed" reads only what the scan has not seen or
+// what has been rewritten since; "all" rebuilds the collection.
+func (in *Install) Scan(ctx context.Context, token, bucket, mode string) (map[string]any, error) {
 	if mode == "" {
 		mode = "changed"
 	}
 	var out map[string]any
-	if err := in.command(ctx, "bucket.scan", map[string]any{"bucket": bucket, "mode": mode}, &out); err != nil {
+	if err := in.command(ctx, token, "bucket.scan", map[string]any{"bucket": bucket, "mode": mode}, &out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// Permission is an "<img src>" address needs a permit that the browser can carry in the query: a
+// browser cannot put an Authorization header on a picture, and the relay refuses an address without
+// one (anytext-gallery, 23.11.2026). One permit serves the whole screen for ten minutes.
+type Permission struct {
+	Base      string `json:"base"`
+	Token     string `json:"token"`
+	ExpiresIn int    `json:"expires_in"`
+}
+
+// permits keeps the permit of this installation, shared by every request the module answers.
+type permits struct {
+	mu    sync.Mutex
+	base  string
+	token string
+	until time.Time
+}
+
+// Permit answers the address pictures and downloads live under, and a fresh permit when the kept one
+// is old. The document is only the door: the installation checks that it exists before the relay is
+// asked.
+func (in *Install) Permit(ctx context.Context, token, bucket, doc string, cache *permits, max int) (Permission, bool) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.token != "" && time.Now().Before(cache.until) {
+		return Permission{Base: cache.base, Token: cache.token, ExpiresIn: int(time.Until(cache.until).Seconds())}, true
+	}
+	if strings.TrimSpace(doc) == "" {
+		return Permission{}, false
+	}
+	var answer struct {
+		URL       string `json:"url"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	if err := in.command(ctx, token, "media.link", map[string]any{
+		"bucket": bucket, "doc": doc, "max": max,
+	}, &answer); err != nil || answer.URL == "" {
+		return Permission{}, false
+	}
+	parsed, err := url.Parse(answer.URL)
+	if err != nil {
+		return Permission{}, false
+	}
+	permit := parsed.Query().Get("mt")
+	if permit == "" {
+		return Permission{}, false
+	}
+	// The base is the address without the route: ".../s/<id>" for a relayed installation.
+	cut := strings.Index(answer.URL, "/api/")
+	if cut <= 0 {
+		return Permission{}, false
+	}
+	ttl := answer.ExpiresIn
+	if ttl <= 0 {
+		ttl = 600
+	}
+	// Kept a little shorter than it lives: an address built at the last second is expired by the time
+	// the picture is asked for.
+	cache.base, cache.token = answer.URL[:cut], permit
+	cache.until = time.Now().Add(time.Duration(ttl)*time.Second - 45*time.Second)
+	return Permission{Base: cache.base, Token: permit, ExpiresIn: ttl}, true
 }
 
 // snippet shortens an answer for an error message: a screen has room for one line.

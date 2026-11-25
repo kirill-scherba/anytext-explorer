@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- The installation may serve this page from its own module root or from the module's own port: the
+     base is written by the server, and the window that frames the page injects its own before this one
+     (docs/MODULES.md, item 4). -->
+<base href="{{.Base}}" />
+<title>AnyText Explorer</title>
+<style>{{.Style}}</style>
+</head>
+<body data-version="{{.Version}}" data-person="{{.Person}}">
+<header class="bar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">▣</span>
+    <span class="title">AnyText Explorer</span>
+    <span class="badge-soft" id="collection-name">—</span>
+  </div>
+  <div class="bar-actions">
+    <button class="btn" id="btn-refresh" title="Перечитать коллекцию">Обновить</button>
+    <button class="btn" id="btn-scan" title="Проиндексировать новое и изменённое">Просканировать</button>
+  </div>
+</header>
+
+<div class="shell">
+  <aside class="side">
+    <label class="search">
+      <input id="q" type="search" placeholder="Имя файла… ( / )" autocomplete="off" />
+    </label>
+
+    <div class="side-block">
+      <div class="side-title">Коллекции</div>
+      <div id="collections" class="collections"></div>
+    </div>
+
+    <div class="side-block">
+      <div class="side-title">Состояние</div>
+      <div id="filters" class="filters"></div>
+    </div>
+
+    <div class="side-block">
+      <div class="side-title">Папки</div>
+      <div id="folders" class="folders"></div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="toolbar">
+      <span id="summary" class="summary">—</span>
+      <div class="toolbar-right">
+        <div class="segmented" id="sort" role="group" aria-label="Сортировка">
+          <button data-sort="name" class="on" title="По имени">имя</button>
+          <button data-sort="date" title="По дате изменения">дата</button>
+          <button data-sort="size" title="По размеру">размер</button>
+          <button data-sort="state" title="По состоянию">состояние</button>
+        </div>
+        <div class="segmented" id="view" role="group" aria-label="Вид">
+          <button data-view="list" class="on" title="Списком">список</button>
+          <button data-view="grid" title="Плиткой с превью">плитка</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="list" class="list" role="list"></div>
+    <div id="more" class="more" hidden></div>
+  </main>
+
+  <section class="preview" id="preview" hidden>
+    <div class="preview-head">
+      <span class="preview-title" id="preview-title">—</span>
+      <button class="icon" id="preview-close" title="Закрыть просмотр">✕</button>
+    </div>
+    <div class="preview-media" id="preview-media"></div>
+    <div class="preview-body" id="preview-body"></div>
+    <div class="preview-actions" id="preview-actions"></div>
+  </section>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="progress" class="progress" hidden></div>
+
+<script>{{.Script}}</script>
+</body>
+</html>
