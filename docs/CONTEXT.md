@@ -81,3 +81,11 @@ What the exercise proved and is worth remembering:
 - the terminal's poll had no timeout: a request the relay dropped silently was waited on for minutes,
   and the input queue sent one POST per keystroke, which is a queue of overtaking requests for a person
   holding an arrow key. Both are fixed in `anytext-gui` today and matter for `vim` and `mc` there.
+
+### 25.11.2026, продолжение — что показал экран
+
+- **Карточка без картинки** показывала пустой квадрат: эмодзи 📄 не на всех шрифтах есть, а пустой
+  квадрат хуже слова. Теперь в углу карточки расширение: `MD`, `PDF`, `DOCX`, `WEB`.
+- **Ссылка на страницу с адресом, кончающимся на `.png`**, считалась картинкой и давала рваную иконку:
+  у ссылки нет своих байтов. Теперь `isImage` ссылку не пропускает, а картинка, которая не загрузилась
+  и после нового разрешения, заменяется на расширение вместо рваной иконки.

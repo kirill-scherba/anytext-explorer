@@ -86,6 +86,9 @@ function kindLabel(doc) {
 }
 
 function isImage(doc) {
+  // A page from the internet is not a picture, whatever its address ends with: a link has no bytes of
+  // its own to show.
+  if (doc.kind === 'link') return false
   return doc.kind === 'image' || IMAGE.test(doc.name || doc.path || '')
 }
 
@@ -392,7 +395,7 @@ function cardHTML(doc) {
   const on = state.selected === doc.key ? ' on' : ''
   const thumb = isImage(doc)
     ? '<img loading="lazy" src="' + thumbURL(doc, 320) + '" alt="" data-permit="' + esc(doc.key) + '" />'
-    : '<span class="kind">' + (doc.kind === 'link' ? '🔗' : '📄') + '</span>'
+    : '<span class="kind">' + esc(kindLabel(doc)) + '</span>'
   const ticked = state.picked.has(doc.key) ? ' checked' : ''
   return '<div class="card' + on + (ticked ? ' picked' : '') + '" data-key="' + esc(doc.key) + '" role="listitem">' +
     '<input type="checkbox" class="tick" data-tick="' + esc(doc.key) + '"' + ticked + ' />' +
@@ -407,11 +410,23 @@ function cardHTML(doc) {
 // once (an <img> carries no token, so the permit travels in its address).
 document.addEventListener('error', async (e) => {
   const img = e.target
-  if (!img || img.tagName !== 'IMG' || !img.dataset.permit || img.dataset.retried) return
-  img.dataset.retried = '1'
-  if (await refreshPermit(img.dataset.permit)) {
-    const doc = state.files.find((d) => d.key === img.dataset.permit)
-    if (doc) img.src = img.src.replace(/mt=[^&]*/, 'mt=' + encodeURIComponent(state.media.token))
+  if (!img || img.tagName !== 'IMG' || !img.dataset.permit) return
+  const doc = state.files.find((d) => d.key === img.dataset.permit)
+  if (!img.dataset.retried) {
+    // The first failure is usually the permit: it lives ten minutes, and a picture loaded from the
+    // cache outlives it. Ask for a new one and try the same picture once.
+    img.dataset.retried = '1'
+    if (await refreshPermit(img.dataset.permit)) {
+      if (doc) img.src = img.src.replace(/mt=[^&]*/, 'mt=' + encodeURIComponent(state.media.token))
+      return
+    }
+  }
+  // The picture is really not there: a card says what kind of file it is instead of a torn icon.
+  const thumb = img.closest('.card .thumb')
+  if (thumb) {
+    thumb.innerHTML = '<span class="kind">' + esc(doc ? kindLabel(doc) : 'файл') + '</span>'
+  } else {
+    img.replaceWith(document.createTextNode(doc ? 'превью недоступно: ' + doc.name : 'превью недоступно'))
   }
 }, true)
 
