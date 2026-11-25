@@ -332,7 +332,7 @@ function drawAll() {
   }
 
   if (state.view === 'grid') {
-    box.className = 'grid'
+    box.className = 'list grid'
     box.innerHTML = shown.map((doc, i) => cardHTML(doc, i)).join('')
   } else {
     box.className = 'list'
