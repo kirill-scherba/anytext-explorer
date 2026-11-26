@@ -245,7 +245,7 @@ function drawCollections() {
       '</div>'
   }).join('') || '<div class="empty">коллекций нет</div>'
   box.querySelectorAll('.collection').forEach((el) => {
-    el.onclick = () => openCollection(el.dataset.id)
+    el.onclick = () => { setSide(false); openCollection(el.dataset.id) }
   })
 
   drawFilters()
@@ -295,6 +295,7 @@ function drawFolders() {
   }).join('') || '<div class="empty">папок нет</div>'
   box.querySelectorAll('.folder').forEach((el) => {
     el.onclick = () => {
+      setSide(false)
       state.folder = state.folder === el.dataset.folder ? '' : el.dataset.folder
       state.shown = PAGE_LIMIT
       drawFolders()
@@ -613,8 +614,22 @@ async function scan() {
   }
 }
 
+// setSide opens or closes the left column on a phone. On a wide screen the column is always
+// there and the button is not drawn, so the class does nothing.
+function setSide(open) {
+  const shell = document.querySelector('.shell')
+  if (!shell) return
+  shell.classList.toggle('side-open', !!open)
+  const backdrop = $('side-backdrop')
+  if (backdrop) backdrop.hidden = !open
+  const btn = $('btn-side')
+  if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false')
+}
+
 // ─── wiring ─────────────────────────────────────────────────────────────
 
+$('btn-side').onclick = () => setSide(!document.querySelector('.shell').classList.contains('side-open'))
+$('side-backdrop').onclick = () => setSide(false)
 $('btn-refresh').onclick = () => reload()
 $('btn-scan').onclick = () => scan()
 $('preview-close').onclick = () => { closePreview(); drawAll() }

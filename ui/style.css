@@ -382,9 +382,44 @@ body { display: flex; flex-direction: column; overflow: hidden; }
   .preview { position: fixed; inset: 0 0 0 auto; width: min(420px, 92vw); box-shadow: var(--shadow); z-index: 30; }
 }
 
+/* The phone has no room for a permanent column, and hiding it made the collections unreachable:
+   the column slides over the content from a button in the header. */
+.only-mobile { display: none; }
+
 @media (max-width: 760px) {
   .shell, .shell.with-preview { grid-template-columns: minmax(0, 1fr); }
-  .side { display: none; }
-  .row { grid-template-columns: 18px 16px 80px minmax(0, 1fr) 64px; }
-  .row .date { display: none; }
+  .only-mobile { display: inline-flex; }
+  .side {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 62;
+    width: min(84vw, 320px);
+    transform: translateX(-100%);
+    transition: transform .18s ease-out;
+    box-shadow: var(--shadow);
+  }
+  .shell.side-open .side { transform: none; }
+  /* The sort and view switches did not fit the width of a phone: they move to their own line and
+     shrink, and the summary keeps its place on the first line, cut with an ellipsis instead of
+     pushing the buttons out of the screen (25.11.2026). */
+  /* The header ran out of room: the name of the program sat under the buttons, and "Добавить файлы"
+     wrapped onto two lines. The name goes away on a phone, the label loses one word, and the
+     buttons keep a line of their own (25.11.2026). */
+  .hide-sm { display: none; }
+  .bar { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+  .title { display: none; }
+  .bar-actions { margin-left: auto; gap: 6px; flex-wrap: nowrap; }
+  .bar-actions .btn { white-space: nowrap; padding: 6px 9px; font-size: 12.5px; }
+  .toolbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 10px; }
+  .summary { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toolbar-right { margin-left: 0; flex: 1 1 100%; gap: 6px; }
+  .segmented { flex: 1 1 auto; min-width: 0; }
+  .segmented button { padding: 4px 6px; font-size: 11.5px; white-space: nowrap; }
+  .shell.side-open .side-backdrop { display: block; }
+  .side-backdrop {
+    position: fixed; inset: 0; z-index: 61; background: rgba(0, 0, 0, .45);
+  }
+  /* The state chip took an 80px column on a phone - a fifth of the screen for one word that the
+     coloured dot already says. The dot and the filter column carry it; the chip goes away
+     (25.11.2026). */
+  .row { grid-template-columns: 18px 16px minmax(0, 1fr) 64px; }
+  .row .chip, .row .date { display: none; }
 }

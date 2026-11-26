@@ -18,7 +18,11 @@
     <span class="badge-soft" id="collection-name">—</span>
   </div>
   <div class="bar-actions">
-    <button class="btn" id="btn-upload" title="Добавить файлы в коллекцию">Добавить файлы</button>
+    <!-- On a phone the left column is a drawer: without this button the collections and folders
+         are simply unreachable (25.11.2026). -->
+    <button class="btn only-mobile" id="btn-side" aria-expanded="false"
+            aria-controls="side" title="Коллекции и папки">☰</button>
+    <button class="btn" id="btn-upload" title="Добавить файлы в коллекцию">Добавить<span class="hide-sm"> файлы</span></button>
     <input type="file" id="file-input" multiple hidden />
     <button class="btn" id="btn-refresh" title="Перечитать коллекцию">Обновить</button>
     <button class="btn" id="btn-scan" title="Проиндексировать новое и изменённое">Просканировать</button>
@@ -26,7 +30,8 @@
 </header>
 
 <div class="shell">
-  <aside class="side">
+  <div class="side-backdrop" id="side-backdrop" hidden></div>
+  <aside class="side" id="side">
     <label class="search">
       <input id="q" type="search" placeholder="Имя файла… ( / )" autocomplete="off" />
     </label>
