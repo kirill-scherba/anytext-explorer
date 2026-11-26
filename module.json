@@ -1,0 +1,29 @@
+{
+  "id": "explorer",
+  "names": {
+    "ru": "Проводник",
+    "en": "Files"
+  },
+  "description": {
+    "ru": "Коллекции и файлы установки: что в поиске, что пропущено и почему",
+    "en": "The collections and files of an installation: what is in the search, what was skipped and why"
+  },
+  "category": "tools",
+  "binary": "anytext-explorer",
+  "addr": "127.0.0.1:7870",
+  "args": [
+    "-addr",
+    "127.0.0.1:7870"
+  ],
+  "ui": "ui",
+  "auto_start": true,
+  "strip": false,
+  "note": "Not stripped: -trimpath together with -ldflags \"-s -w\" makes the Windows build trip Defender's machine-learning verdict Trojan:Win32/Bearfoos.A!ml, and the file is removed while it is being downloaded (measured 26.11.2026).",
+  "platforms": [
+    "linux-amd64",
+    "linux-arm64",
+    "windows-amd64",
+    "darwin-arm64",
+    "darwin-amd64"
+  ]
+}
