@@ -50,7 +50,7 @@ CGO_ENABLED=0 go build -o ~/.local/bin/anytext-explorer .
 curl -s -X POST http://127.0.0.1:7787/api/command -H 'Content-Type: application/json' -d '{
   "command":"modules.install",
   "args":{"id":"explorer","name":"Проводник","names":{"ru":"Проводник","en":"Files"},
-          "version":"0.2.0","addr":"127.0.0.1:7870",
+          "version":"0.2.1","addr":"127.0.0.1:7870",
           "command":["'"$HOME"'/.local/bin/anytext-explorer","-addr","127.0.0.1:7870"],
           "auto_start":true,"enabled":true}}'
 
@@ -141,3 +141,12 @@ go test ./...
 The tests use a fake installation and check the three rules that broke before: the page is one
 self-contained document, its base follows the mount, and a reader is neither shown nor given the right
 to change documents.
+
+## Building for Windows: do not strip this binary
+
+`go build -trimpath -ldflags "-s -w"` makes the Windows build of this module light up Defender's
+machine-learning verdict `Trojan:Win32/Bearfoos.A!ml`, and the file is deleted while it is still being
+written — an installation reports "не удалось скачать ни по одному адресу" and cannot tell why. Measured
+on 26.11.2026 by scanning four builds of the same source: `-trimpath` alone clean, `-s -w` alone clean,
+both together flagged. `scripts/publish.py` of matrica-modules-dist builds this module without `-s -w`
+(`"strip": false` in `modules.json`); the binary is 15 MB instead of 10, and Defender leaves it alone.
