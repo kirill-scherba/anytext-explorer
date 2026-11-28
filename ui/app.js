@@ -1,3 +1,160 @@
+/* i18n:start — the module speaks the installation's language.
+
+   The screen is translated by its Russian text: a key is what a person would read in Russian, so a
+   missing translation shows the original instead of an empty line, and the code around it does not
+   change at all. The installation keeps its language in anytext.lang (the same switch the application
+   uses), and the system language is the fallback. */
+const LANGS = ['ru', 'en'];
+
+function storedLang() {
+  try {
+    const value = localStorage.getItem('anytext.lang');
+    if (LANGS.includes(value)) return value;
+  } catch (e) { /* private mode: the system language is enough */ }
+  return (navigator.language || '').toLowerCase().startsWith('ru') ? 'ru' : 'en';
+}
+
+const lang = storedLang();
+
+const EN = {
+ " и переиндексируется.</p>": " and reindexing.</p>",
+ " файлов": " files",
+ " файлов…": " files…",
+ " — индексирую…": " — indexing…",
+ ", ошибок ": ", errors ",
+ ": сохранено": ": saved",
+ ": удалён": ": deleted",
+ ": файл сохранён": ": the file is saved",
+ "<br />… и ещё ": "<br />… and ",
+ "<div class=\"empty\">коллекций нет</div>": "<div class=\"empty\">no collections</div>",
+ "<p>Куда положить выбранные файлы. Имена останутся прежними.</p>": "<p>Where to put the selected files. Their names stay as they are.</p>",
+ "<p>Сохраняется в файл ": "<p>Saved to the file ",
+ "<p>Файл будет удалён с диска, а документ — из поиска. Это не отмена.</p>": "<p>The file will be deleted from the disk and the document from the search. This is not an undo.</p>",
+ "<p>Файлы будут удалены с диска, документы — из поиска. Это не отмена.</p>": "<p>The files will be deleted from the disk and the documents from the search. This is not an undo.</p>",
+ "<p>Эти слова будет находить поиск. Сам файл не меняется.</p>": "<p>The search will find these words. The file itself does not change.</p>",
+ "Описание": "Description",
+ "Отмена": "Cancel",
+ "Переместить": "Move",
+ "Переместить ": "Move ",
+ "Править файл: ": "Edit the file: ",
+ "Править: ": "Edit: ",
+ "Расшифровка": "Transcription",
+ "Сохранить": "Save",
+ "Текст в поиске": "Text in the search",
+ "Удалить": "Delete",
+ "Удалить ": "Delete ",
+ "Удалить файл": "Delete the file",
+ "архив готов": "the archive is ready",
+ "в поиске": "in the search",
+ "в этой установке нет коллекций": "this installation has no collections",
+ "возвращено в поиск": "restored to the search",
+ "выбрано ": "selected ",
+ "выполняю: ": "running: ",
+ "добавлено ": "added ",
+ "добавляю файлов: ": "adding files: ",
+ "запись: текст добавляет расшифровка": "a recording: the transcription adds the text",
+ "имя не изменилось": "the name did not change",
+ "исключён вами": "excluded by you",
+ "не изменился": "unchanged",
+ "не сканировано": "not scanned",
+ "не удалось добавить: ": "could not add: ",
+ "не удалось прочитать коллекцию: ": "could not read the collection: ",
+ "описано моделью": "described by a model",
+ "перемещено": "moved",
+ "перемещён": "moved",
+ "пропущено": "skipped",
+ "собираю архив из ": "building an archive from ",
+ "текста не найдено": "no text found",
+ "убрано": "removed",
+ "убрано из поиска": "removed from the search",
+ "удалено с диска": "deleted from the disk",
+ "установка не отвечает": "the installation is not answering",
+ "установка не отвечает: ": "the installation is not answering: ",
+ "формат не поддерживается": "the format is not supported",
+ "файл": "file",
+ "Б": "B",
+ "КБ": "KB",
+ "МБ": "MB",
+ "ГБ": "GB",
+ "ТБ": "TB"
+};
+const EN_STATIC = {
+ "Коллекции и папки": "Collections and folders",
+ "Добавить файлы в коллекцию": "Add files to the collection",
+ "Добавить": "Add",
+ " файлы": " files",
+ "Перечитать коллекцию": "Reload the collection",
+ "Обновить": "Refresh",
+ "Проиндексировать новое и изменённое": "Index what is new or changed",
+ "Просканировать": "Scan",
+ "Имя файла… ( / )": "File name… ( / )",
+ "Коллекции": "Collections",
+ "Состояние": "State",
+ "Папки": "Folders",
+ "Выбрать все в текущем фильтре": "Select all in the current filter",
+ "Сортировка": "Sorting",
+ "имя": "name",
+ "дата": "date",
+ "размер": "size",
+ "состояние": "state",
+ "По имени": "By name",
+ "По дате изменения": "By modification date",
+ "По размеру": "By size",
+ "По состоянию": "By state",
+ "Вид": "View",
+ "список": "list",
+ "плитка": "grid",
+ "Списком": "As a list",
+ "Плиткой с превью": "As a grid with previews",
+ "выбрано 0": "0 selected",
+ "Скачать zip": "Download zip",
+ "Скачать выбранные одним архивом": "Download the selected as one archive",
+ "Описать моделью": "Describe with a model",
+ "Описать картинки моделью": "Describe the pictures with a model",
+ "Переместить выбранные в другую папку коллекции": "Move the selected into another folder of the collection",
+ "Удалить выбранные файлы с диска": "Delete the selected files from the disk",
+ "Убрать из поиска": "Remove from the search",
+ "Убрать из поиска, файлы останутся": "Remove from the search, the files stay",
+ "Вернуть в поиск": "Restore to the search",
+ "Снять": "Clear",
+ "Снять выделение": "Clear the selection",
+ "отпустите файлы — они добавятся в коллекцию": "drop the files — they will be added to the collection",
+ "Закрыть просмотр": "Close the preview",
+ "Закрыть": "Close"
+};
+
+function t(text, values) {
+  if (lang !== 'en') return text;
+  let out = EN[text] !== undefined ? EN[text] : text;
+  if (values) for (const k of Object.keys(values)) out = out.split('{' + k + '}').join(String(values[k]));
+  return out;
+}
+
+// translateStatic walks the page once: the markup's own words and the hints of its controls.
+function translateStatic(root) {
+  if (lang !== 'en') return;
+  const walker = document.createTreeWalker(root || document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const tag = node.parentElement ? node.parentElement.tagName : '';
+      return (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const key = node.nodeValue.trim();
+    if (key && EN_STATIC[key] !== undefined) node.nodeValue = node.nodeValue.replace(key, EN_STATIC[key]);
+  }
+  for (const el of document.querySelectorAll('[title],[placeholder],[aria-label]')) {
+    for (const attr of ['title', 'placeholder', 'aria-label']) {
+      const value = el.getAttribute(attr);
+      if (value && EN_STATIC[value] !== undefined) el.setAttribute(attr, EN_STATIC[value]);
+    }
+  }
+  document.documentElement.lang = 'en';
+}
+/* i18n:end */
+
 // Copyright 2026 Kirill Scherba. All rights reserved.
 // Use of this source code is governed by an MIT-style license.
 //
@@ -11,18 +168,18 @@
 const $ = (id) => document.getElementById(id)
 
 const STATE = {
-  indexed: { label: 'в поиске', cls: 'state-indexed', color: 'var(--ok)' },
-  skipped: { label: 'пропущено', cls: 'state-skipped', color: 'var(--warn)' },
-  excluded: { label: 'убрано', cls: 'state-excluded', color: 'var(--bad)' },
-  unscanned: { label: 'не сканировано', cls: 'state-unscanned', color: 'var(--dim)' },
+  indexed: { label: t('в поиске'), cls: 'state-indexed', color: 'var(--ok)' },
+  skipped: { label: t('пропущено'), cls: 'state-skipped', color: 'var(--warn)' },
+  excluded: { label: t('убрано'), cls: 'state-excluded', color: 'var(--bad)' },
+  unscanned: { label: t('не сканировано'), cls: 'state-unscanned', color: 'var(--dim)' },
 }
 
 const REASON = {
-  unsupported: 'формат не поддерживается',
-  audio: 'запись: текст добавляет расшифровка',
-  no_text: 'текста не найдено',
-  unchanged: 'не изменился',
-  excluded: 'исключён вами',
+  unsupported: t('формат не поддерживается'),
+  audio: t('запись: текст добавляет расшифровка'),
+  no_text: t('текста не найдено'),
+  unchanged: t('не изменился'),
+  excluded: t('исключён вами'),
 }
 
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?|avif|heic)$/i
@@ -180,10 +337,10 @@ async function loadState() {
     drawCollections()
     const first = state.collections[0]
     if (first) await openCollection(first.id)
-    else $('summary').textContent = 'в этой установке нет коллекций'
+    else $('summary').textContent = t('в этой установке нет коллекций')
   } catch (e) {
-    toast('установка не отвечает: ' + e.message, 'bad')
-    $('summary').textContent = 'установка не отвечает'
+    toast(t('установка не отвечает: ') + e.message, 'bad')
+    $('summary').textContent = t('установка не отвечает')
   } finally {
     progress(false)
   }
@@ -221,7 +378,7 @@ async function reload() {
       if (doc) setTimeout(() => select(doc.key), 0)
     }
   } catch (e) {
-    toast('не удалось прочитать коллекцию: ' + e.message, 'bad')
+    toast(t('не удалось прочитать коллекцию: ') + e.message, 'bad')
   } finally {
     state.loading = false
     progress(false)
@@ -243,7 +400,7 @@ function drawCollections() {
       '<span class="name">' + esc(b.name || b.id) + '</span>' +
       (on && folders ? '<span class="path">' + esc(folders) + '</span>' : '') +
       '</div>'
-  }).join('') || '<div class="empty">коллекций нет</div>'
+  }).join('') || t('<div class="empty">коллекций нет</div>')
   box.querySelectorAll('.collection').forEach((el) => {
     el.onclick = () => { setSide(false); openCollection(el.dataset.id) }
   })
@@ -793,7 +950,7 @@ async function submitMove(doc, folder, name) {
   progress(true)
   try {
     const res = await post('api/move', { bucket: doc.bucket, doc: doc.key, folder, name })
-    toast(doc.name + ': ' + (res.moved ? 'перемещён' : 'имя не изменилось'), 'good')
+    toast(doc.name + ': ' + (res.moved ? t('перемещён') : t('имя не изменилось')), 'good')
     if (res.moved) await scanQuiet()
     state.selected = null
     closePreview()
@@ -806,10 +963,10 @@ async function submitMove(doc, folder, name) {
 }
 
 function deleteDoc(doc) {
-  openModal('Удалить файл', '<p>Файл будет удалён с диска, а документ — из поиска. Это не отмена.</p>' +
+  openModal(t('Удалить файл'), t('<p>Файл будет удалён с диска, а документ — из поиска. Это не отмена.</p>') +
     '<p style="color:var(--text)"><b>' + esc(doc.name) + '</b><br />' + esc(doc.folder) + '</p>', [
-    { label: 'Отмена', onClick: () => closeModal() },
-    { label: 'Удалить', kind: 'danger', onClick: () => submitDelete(doc) },
+    { label: t('Отмена'), onClick: () => closeModal() },
+    { label: t('Удалить'), kind: 'danger', onClick: () => submitDelete(doc) },
   ])
 }
 
@@ -818,7 +975,7 @@ async function submitDelete(doc) {
   progress(true)
   try {
     await post('api/delete', { bucket: doc.bucket, doc: doc.key })
-    toast(doc.name + ': удалён', 'good')
+    toast(doc.name + t(': удалён'), 'good')
     state.selected = null
     state.picked.delete(doc.key)
     closePreview()
@@ -833,12 +990,12 @@ async function submitDelete(doc) {
 // ─── editing: the text the search holds, and the file itself ─────────────
 
 function editIndexText(doc, kind, current) {
-  const titles = { text: 'Текст в поиске', description: 'Описание', audio: 'Расшифровка' }
-  openModal('Править: ' + (titles[kind] || kind), '<p>' + esc(doc.name) + '</p>' +
+  const titles = { text: t('Текст в поиске'), description: t('Описание'), audio: t('Расшифровка') }
+  openModal(t('Править: ') + (titles[kind] || kind), '<p>' + esc(doc.name) + '</p>' +
     '<textarea id="f-text">' + esc(current) + '</textarea>' +
-    '<p>Эти слова будет находить поиск. Сам файл не меняется.</p>', [
-    { label: 'Отмена', onClick: () => closeModal() },
-    { label: 'Сохранить', kind: 'primary', onClick: () => submitText(doc, kind, $('f-text').value) },
+    t('<p>Эти слова будет находить поиск. Сам файл не меняется.</p>'), [
+    { label: t('Отмена'), onClick: () => closeModal() },
+    { label: t('Сохранить'), kind: 'primary', onClick: () => submitText(doc, kind, $('f-text').value) },
   ])
 }
 
@@ -847,7 +1004,7 @@ async function submitText(doc, kind, text) {
   progress(true)
   try {
     await post('api/save', { bucket: doc.bucket, doc: doc.key, kind, text })
-    toast(doc.name + ': сохранено', 'good')
+    toast(doc.name + t(': сохранено'), 'good')
     await reload()
     const again = state.files.find((d) => d.key === doc.key)
     if (again) openPreview(again)
@@ -864,10 +1021,10 @@ async function editFile(doc) {
   progress(true)
   try {
     const raw = await api('api/raw?bucket=' + encodeURIComponent(doc.bucket) + '&doc=' + encodeURIComponent(doc.key))
-    openModal('Править файл: ' + doc.name, '<textarea id="f-text">' + esc(raw.text) + '</textarea>' +
-      '<p>Сохраняется в файл ' + esc(doc.path || doc.name) + ' и переиндексируется.</p>', [
-      { label: 'Отмена', onClick: () => closeModal() },
-      { label: 'Сохранить', kind: 'primary', onClick: () => submitFile(doc, $('f-text').value) },
+    openModal(t('Править файл: ') + doc.name, '<textarea id="f-text">' + esc(raw.text) + '</textarea>' +
+      t('<p>Сохраняется в файл ') + esc(doc.path || doc.name) + t(' и переиндексируется.</p>'), [
+      { label: t('Отмена'), onClick: () => closeModal() },
+      { label: t('Сохранить'), kind: 'primary', onClick: () => submitFile(doc, $('f-text').value) },
     ])
   } catch (e) {
     toast(e.message, 'bad')
@@ -881,7 +1038,7 @@ async function submitFile(doc, text) {
   progress(true)
   try {
     await post('api/save', { bucket: doc.bucket, doc: doc.key, kind: 'file', text })
-    toast(doc.name + ': файл сохранён', 'good')
+    toast(doc.name + t(': файл сохранён'), 'good')
     await scanQuiet()
     await reload()
     const again = state.files.find((d) => d.key === doc.key)
@@ -910,7 +1067,7 @@ function pickedDocs() {
 function drawBulk(list) {
   const n = state.picked.size
   $('bulkbar').hidden = n === 0
-  if (n) $('bulk-count').textContent = 'выбрано ' + n
+  if (n) $('bulk-count').textContent = t('выбрано ') + n
   list = list || visibleFiles()
   const box = $('pick-all')
   const all = list.length > 0 && list.every((d) => state.picked.has(d.key))
@@ -920,11 +1077,11 @@ function drawBulk(list) {
 }
 
 const BULK_DONE = {
-  exclude: 'убрано из поиска',
-  restore: 'возвращено в поиск',
-  describe: 'описано моделью',
-  move: 'перемещено',
-  delete: 'удалено с диска',
+  exclude: t('убрано из поиска'),
+  restore: t('возвращено в поиск'),
+  describe: t('описано моделью'),
+  move: t('перемещено'),
+  delete: t('удалено с диска'),
 }
 
 async function bulk(action) {
@@ -943,22 +1100,22 @@ async function bulk(action) {
   // Two actions ask a question first: where to put the files, and whether to really erase them.
   if (action === 'move') {
     const folders = collectionFolders()
-    openModal('Переместить ' + docs.length + ' файлов',
-      '<p>Куда положить выбранные файлы. Имена останутся прежними.</p>' +
+    openModal(t('Переместить ') + docs.length + t(' файлов'),
+      t('<p>Куда положить выбранные файлы. Имена останутся прежними.</p>') +
       '<select id="f-folder">' + folders.map((f) =>
         '<option value="' + esc(f) + '">' + esc(f) + '</option>').join('') + '</select>', [
-        { label: 'Отмена', onClick: () => closeModal() },
-        { label: 'Переместить', kind: 'primary', onClick: () => runBulk('move', $('f-folder').value) },
+        { label: t('Отмена'), onClick: () => closeModal() },
+        { label: t('Переместить'), kind: 'primary', onClick: () => runBulk('move', $('f-folder').value) },
       ])
     return
   }
   if (action === 'delete') {
-    openModal('Удалить ' + docs.length + ' файлов',
-      '<p>Файлы будут удалены с диска, документы — из поиска. Это не отмена.</p>' +
+    openModal(t('Удалить ') + docs.length + t(' файлов'),
+      t('<p>Файлы будут удалены с диска, документы — из поиска. Это не отмена.</p>') +
       '<p style="color:var(--text)">' + docs.slice(0, 12).map((d) => esc(d.name)).join('<br />') +
-      (docs.length > 12 ? '<br />… и ещё ' + (docs.length - 12) : '') + '</p>', [
-        { label: 'Отмена', onClick: () => closeModal() },
-        { label: 'Удалить', kind: 'danger', onClick: () => runBulk('delete') },
+      (docs.length > 12 ? t('<br />… и ещё ') + (docs.length - 12) : '') + '</p>', [
+        { label: t('Отмена'), onClick: () => closeModal() },
+        { label: t('Удалить'), kind: 'danger', onClick: () => runBulk('delete') },
       ])
     return
   }
@@ -971,13 +1128,13 @@ async function runBulk(action, folder) {
   if (!docs.length) return
   closeModal()
   progress(true)
-  toast('выполняю: ' + docs.length + ' файлов…')
+  toast(t('выполняю: ') + docs.length + t(' файлов…'))
   try {
     const res = await post('api/bulk', {
       action, bucket: state.bucket, docs: docs.map((d) => d.key), folder: folder || '',
     })
     const bad = (res.failed || []).length
-    toast(BULK_DONE[action] + ': ' + (res.done || 0) + (bad ? ', ошибок ' + bad : ''), bad ? 'bad' : 'good')
+    toast(BULK_DONE[action] + ': ' + (res.done || 0) + (bad ? t(', ошибок ') + bad : ''), bad ? 'bad' : 'good')
     state.picked.clear()
     state.lastPicked = -1
     // A move changes the addresses the index knows: the new ones come from a scan, not from a guess.
@@ -996,7 +1153,7 @@ async function runBulk(action, folder) {
 // is not a download, it is a chore.
 async function downloadZip(docs) {
   progress(true)
-  toast('собираю архив из ' + docs.length + ' файлов…')
+  toast(t('собираю архив из ') + docs.length + t(' файлов…'))
   try {
     const res = await fetch('api/zip', {
       method: 'POST',
@@ -1016,7 +1173,7 @@ async function downloadZip(docs) {
     a.click()
     a.remove()
     setTimeout(() => URL.revokeObjectURL(url), 30000)
-    toast('архив готов', 'good')
+    toast(t('архив готов'), 'good')
   } catch (e) {
     toast(e.message, 'bad')
   } finally {
@@ -1041,7 +1198,7 @@ async function uploadFiles(files) {
   const list = [...(files || [])]
   if (!list.length || !state.bucket) return
   progress(true)
-  toast('добавляю файлов: ' + list.length + '…')
+  toast(t('добавляю файлов: ') + list.length + '…')
   const form = new FormData()
   for (const f of list) form.append('file', f, f.name)
   try {
@@ -1050,13 +1207,13 @@ async function uploadFiles(files) {
     if (data.error) throw new Error(data.error)
     const saved = (data.saved || []).length
     const failed = (data.failed || []).length
-    toast('добавлено ' + saved + (failed ? ', ошибок ' + failed : '') + ' — индексирую…', failed ? 'bad' : 'good')
+    toast(t('добавлено ') + saved + (failed ? t(', ошибок ') + failed : '') + t(' — индексирую…'), failed ? 'bad' : 'good')
     if (saved) {
       await post('api/scan', { bucket: state.bucket, mode: 'changed' })
       await reload()
     }
   } catch (e) {
-    toast('не удалось добавить: ' + e.message, 'bad')
+    toast(t('не удалось добавить: ') + e.message, 'bad')
   } finally {
     progress(false)
     $('file-input').value = ''
@@ -1089,6 +1246,8 @@ listArea.addEventListener('drop', (e) => {
 })
 
 // The last line of the file: nothing else waits for it.
+translateStatic()
+
 startOptions()
 
 loadState()
